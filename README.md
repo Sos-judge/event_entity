@@ -12,15 +12,17 @@ The model was trained and evaluated on the ECB+ corpus.
 ## Prerequisites
 * Python 3.6
 * [PyTorch](https://pytorch.org/) 0.4.0
-    * We specifically used PyTorch 0.4.0 with CUDA 9.0 on Linux, which can be installed using the command:
+    * 原文使用CUDA 9.0和LINUX:
     `pip install https://download.pytorch.org/whl/cu90/torch-0.4.0-cp36-cp36m-linux_x86_64.whl`
+    * 我使用cpuonly和win64:
+    `pip install http://download.pytorch.org/whl/cpu/torch-0.4.0-cp36-cp36m-win_amd64.whl`
 * [spaCy](https://spacy.io/) 2.0.18
     *  Install the spacy en model with `python -m spacy download en`
 * [Matplotlib](https://matplotlib.org/) 3.0.2
-* [NumPy](https://www.numpy.org/) 1.16.1
+* [NumPy](https://www.numpy.org/) 1.16.1(应该是1.17.3)
 * [NLTK](https://www.nltk.org/) 3.4
 * [scikit-learn](https://scikit-learn.org/) 0.20.2
-* [SciPy](https://www.scipy.org/) 1.2.1
+* [SciPy](https://www.scipy.org/) 1.2.1(应该是1.3.1)
 * [seaborn](https://seaborn.pydata.org/) 0.9.0
 * [AllenNLP](https://allennlp.org/) 0.5.1
 
