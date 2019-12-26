@@ -628,7 +628,7 @@ def load_check_point(fname):
     :param fname: model's filename
     :return:Pytorch model
     '''
-    return torch.load(fname)
+    return torch.load(fname, map_location=torch.device('cpu'))
 
 
 def create_gold_clusters(mentions):
