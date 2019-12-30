@@ -25,6 +25,7 @@ The model was trained and evaluated on the ECB+ corpus.
 * [SciPy](https://www.scipy.org/) 1.2.1(应该是1.3.1)
 * [seaborn](https://seaborn.pydata.org/) 0.9.0
 * [AllenNLP](https://allennlp.org/) 0.5.1
+* [perl](https://www.perl.org/get.html) 这玩意不是python包，是一个命令行工具
 
 ## Testing Instructions
 * Download pretrained event and entity models and pre-processed data for the ECB+ corpus at *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*这玩意在谷歌网盘上，你要直接下能卡死。使用多网盘同步工具MultClude把谷歌网盘上的文件转到OneDrive上，在从OneDrive上下载。参见 https://blog.csdn.net/zhmxubing/article/details/88681573.
