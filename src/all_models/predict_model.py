@@ -1,5 +1,4 @@
 import os
-import gc
 import sys
 import json
 import random
@@ -8,57 +7,82 @@ import numpy as np
 import _pickle as cPickle
 import logging
 import argparse
+import torch
+
+
+print("环境变量：", os.environ["PATH"], "\n")
+
+print("cuda版本：")
+os.system("nvcc --version")
+print()
 
 # 把"工作路径/src"下的文件都加入搜索路径
 for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
     # 把每个文件加入到包的搜索路径
     sys.path.append(os.path.join("src", pack))
 
+# 配置参数列表
+args = []
+
+# 配置参数：命令行参数解器
 parser = argparse.ArgumentParser(description='Testing the regressors')
-
-parser.add_argument('--config_path', type=str,
-                    help=' The path configuration json file')
-parser.add_argument('--out_dir', type=str,
-                    help=' The directory to the output folder')
-
+parser.add_argument('--config_path', type=str, help=' The path configuration json file')
+parser.add_argument('--out_dir', type=str, help=' The directory to the output folder')
+# 进行参数解析，结果存入配置参数列表
 args = parser.parse_args()
 
-out_dir = args.out_dir
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
+# 根据out_dir参数，创建输出路径（如果不存在）
+if not os.path.exists(args.out_dir):
+    os.makedirs(args.out_dir)
 
-logging.basicConfig(filename=os.path.join(args.out_dir, "test_log.txt"),
-                    level=logging.INFO, filemode="w")
-
-# Loads a json configuration file (test_config.json)
+# 根据config_path参数，读取配置文件(test_config.json)
 with open(args.config_path, 'r') as js_file:
     config_dict = json.load(js_file)
 
-# Saves a json configuration file (test_config.json) in the experiment folder
+# 在输出路径创建配置文件(test_config.json)
 with open(os.path.join(args.out_dir,'test_config.json'), "w") as js_file:
     json.dump(config_dict, js_file, indent=4, sort_keys=True)
 
-random.seed(config_dict["random_seed"])
-np.random.seed(config_dict["random_seed"])
-
+# 配置参数：是否使用cuda
+# 配置文件中gpu_num字段为-1表示不想使用cuda，为0表示想使用cuda
 if config_dict["gpu_num"] != -1:
+    # 新增环境变量
     os.environ["CUDA_VISIBLE_DEVICES"]= str(config_dict["gpu_num"])
+    # 新增配置参数
     args.use_cuda = True
 else:
     args.use_cuda = False
-
-import torch
-
+# 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
 args.use_cuda = args.use_cuda and torch.cuda.is_available()
+if args.use_cuda:
+    print('使用cuda')
+else:
+    print("不使用cuda")
 
+# 配置random
+random.seed(config_dict["random_seed"])
+
+# 配置numpy
+np.random.seed(config_dict["random_seed"])
+
+# 配置pytorch
 torch.manual_seed(config_dict["seed"])
 if args.use_cuda:
     torch.cuda.manual_seed(config_dict["seed"])
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    print('Testing with CUDA')
 
-from scorer import *
+# 创建logger
+logging.basicConfig(
+    # 使用fileHandler,日志文件在输出路径中(test_log.txt)
+    filename=os.path.join(args.out_dir, "test_log.txt"),
+    filemode="w",
+    # 配置日志级别
+    level=logging.INFO
+)
+
+# 下边是自己写的包
+# 这些包得放在logger之后，因为他们用到了logger
 from classes import *
 from eval_utils import *
 from model_utils import *
