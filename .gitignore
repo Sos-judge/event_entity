@@ -1,3 +1,6 @@
+.idea/*
+.vscode/*
+
 */processed/*
 models/*
 *output*/*
