@@ -5,16 +5,14 @@ import json
 import random
 import subprocess
 import numpy as np
-
-for pack in os.listdir("src"):
-    sys.path.append(os.path.join("src", pack))
-
-sys.path.append("/src/shared/")
-
 import _pickle as cPickle
 import logging
 import argparse
 
+# 把"工作路径/src"下的文件都加入搜索路径
+for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
+    # 把每个文件加入到包的搜索路径
+    sys.path.append(os.path.join("src", pack))
 
 parser = argparse.ArgumentParser(description='Testing the regressors')
 
