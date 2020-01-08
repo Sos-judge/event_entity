@@ -1570,12 +1570,13 @@ def test_models(test_set, cd_event_model,cd_entity_model, device,
             logging.info('Topic {}:'.format(topic_id))
             print('Topic {}:'.format(topic_id))
 
+            # 初始化：实体和事件抽取
             event_mentions, entity_mentions = topic_to_mention_list(topic,
                                                                     is_gold=config_dict["test_use_gold_mentions"])
-
             all_event_mentions.extend(event_mentions)
             all_entity_mentions.extend(entity_mentions)
 
+            # 事件和实体的表征
             # create span rep for both entity and event mentions
             create_mention_span_representations(event_mentions, cd_event_model, device,
                                                 topic.docs, is_event=True,
@@ -1583,7 +1584,6 @@ def test_models(test_set, cd_event_model,cd_entity_model, device,
             create_mention_span_representations(entity_mentions, cd_entity_model, device,
                                                 topic.docs, is_event=False,
                                                 requires_grad=False)
-
             print('number of event mentions : {}'.format(len(event_mentions)))
             print('number of entity mentions : {}'.format(len(entity_mentions)))
             logging.info('number of event mentions : {}'.format(len(event_mentions)))
@@ -1610,6 +1610,7 @@ def test_models(test_set, cd_event_model,cd_entity_model, device,
             entity_th = config_dict["entity_merge_threshold"]
             event_th = config_dict["event_merge_threshold"]
 
+            # 初始化结束，开始主循环
             for i in range(1,config_dict["merge_iters"]+1):
                 print('Iteration number {}'.format(i))
                 logging.info('Iteration number {}'.format(i))
