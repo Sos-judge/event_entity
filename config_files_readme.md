@@ -50,14 +50,19 @@ The main attributes of this configuration files are:
 * `test_path` - path to the pickle file of the test set, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
 * `cd_event_model_path` - path to the tested event model file.
 * `cd_entity_model_path` - path to the tested entity model file.
-* `gpu_num` - -1表示不想尝试使用cuda，为0表示想尝试使用cuda。
+* `gpu_num` - -1表示不想尝试使用cuda，其他值(一般用0)表示想尝试使用cuda。
 * `event_merge_threshold/entity_merge_threshold` - merge threshold during testing, tuned on the dev set.
+* `use_elmo` - ?
 * `use_args_feats`- whether to use argument/predicate vectors.
 * `use_binary_feats` -  whether to use the coreference binary features.
+* `test_use_gold_mentions` - ?
 * `wd_entity_coref_file` - a path to a file (provided) which contains the predictions of a WD entity coreference system on the ECB+. We use CoreNLP for that purpose.
+* `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
+* `merge_iters` - 迭代次数，for i in range(1,config_dict["merge_iters"]+1)
+* `load_predicted_topics` - ?
+* `predicted_topics_path` - path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
+* `seed` - torch.manual_seed(config_dict["seed"])和torch.cuda.manual_seed(config_dict["seed"])
+* `random_seed` - random.seed(config_dict["random_seed"])和np.random.seed(config_dict["random_seed"])
 * `event_gold_file_path` - path to the key (gold) event coreference file (for running the evaluation with the CoNLL scorer), provided in this repo.
 * `entity_gold_file_path` - path to the key (gold) entity coreference file (for running the evaluation with the CoNLL scorer), provided in this repo.
-* `predicted_topics_path` - path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
-* `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
-
 
