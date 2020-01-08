@@ -4,7 +4,7 @@ import json
 import random
 import subprocess
 import numpy as np
-import _pickle as cPickle
+import _pickle as cPickle  # python3之后，cPickle包改名成了_pickle
 import logging
 import argparse
 import torch
@@ -20,9 +20,6 @@ print()
 for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
     # 把每个文件加入到包的搜索路径
     sys.path.append(os.path.join("src", pack))
-
-# 配置参数列表
-args = []
 
 # 配置参数：命令行参数解器
 parser = argparse.ArgumentParser(description='Testing the regressors')
@@ -49,12 +46,12 @@ if config_dict["gpu_num"] != -1:
     # 新增环境变量
     os.environ["CUDA_VISIBLE_DEVICES"]= str(config_dict["gpu_num"])
     # 新增配置参数
-    args.use_cuda = True
+    use_cuda = True
 else:
-    args.use_cuda = False
+    use_cuda = False
 # 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
-args.use_cuda = args.use_cuda and torch.cuda.is_available()
-if args.use_cuda:
+use_cuda = use_cuda and torch.cuda.is_available()
+if use_cuda:
     print('使用cuda')
 else:
     print("不使用cuda")
@@ -67,7 +64,7 @@ np.random.seed(config_dict["random_seed"])
 
 # 配置pytorch
 torch.manual_seed(config_dict["seed"])
-if args.use_cuda:
+if use_cuda:
     torch.cuda.manual_seed(config_dict["seed"])
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -85,7 +82,8 @@ logging.basicConfig(
 # 这些包得放在logger之后，因为他们用到了logger
 from classes import *
 from eval_utils import *
-from model_utils import *
+# from model_utils import *
+import model_utils
 
 def read_conll_f1(filename):
     '''
@@ -153,19 +151,20 @@ def run_conll_scorer():
 def test_model(test_set):
     '''
     Loads trained event and entity models and test them on the test set
-    :param test_set: a Corpus object, represents the test split
+    :param test_set: 测试数据
     '''
-    device = torch.device("cuda:0" if args.use_cuda else "cpu")
+    device = torch.device("cuda:0" if use_cuda else "cpu")
 
-    cd_event_model = load_check_point(config_dict["cd_event_model_path"])
-    cd_entity_model = load_check_point(config_dict["cd_entity_model_path"])
+    cd_event_model = model_utils.load_check_point(config_dict["cd_event_model_path"])
+    cd_entity_model = model_utils.load_check_point(config_dict["cd_entity_model_path"])
 
     cd_event_model.to(device)
     cd_entity_model.to(device)
 
-    doc_to_entity_mentions = load_entity_wd_clusters(config_dict)
+    # 加载外部wd ec结果
+    doc_to_entity_mentions = model_utils.load_entity_wd_clusters(config_dict)
 
-    _,_ = test_models(test_set, cd_event_model, cd_entity_model, device, config_dict, write_clusters=True, out_dir=args.out_dir,
+    _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model, device, config_dict, write_clusters=True, out_dir=args.out_dir,
                       doc_to_entity_mentions=doc_to_entity_mentions,analyze_scores=True)
 
     run_conll_scorer()
@@ -175,15 +174,17 @@ def main():
     '''
     This script loads the trained event and entity models and test them on the test set
     '''
+
+    # 读入测试数据
     print('Loading test data...')
     logging.info('Loading test data...')
     with open(config_dict["test_path"], 'rb') as f:
         test_data = cPickle.load(f)
-
     print('Test data have been loaded.')
     logging.info('Test data have been loaded.')
 
-    test_model(test_data)
+    # 跑模型进行测试
+    test_model(test_data)  # test_model这玩意是上边定义的函数
 
 
 if __name__ == '__main__':
