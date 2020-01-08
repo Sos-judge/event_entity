@@ -50,6 +50,7 @@ The main attributes of this configuration files are:
 * `test_path` - path to the pickle file of the test set, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
 * `cd_event_model_path` - path to the tested event model file.
 * `cd_entity_model_path` - path to the tested entity model file.
+* `gpu_num` - -1表示不想尝试使用cuda，为0表示想尝试使用cuda。
 * `event_merge_threshold/entity_merge_threshold` - merge threshold during testing, tuned on the dev set.
 * `use_args_feats`- whether to use argument/predicate vectors.
 * `use_binary_feats` -  whether to use the coreference binary features.
