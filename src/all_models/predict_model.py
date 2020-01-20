@@ -36,18 +36,17 @@ if not os.path.exists(args.out_dir):
 with open(args.config_path, 'r') as js_file:
     config_dict = json.load(js_file)
 
-# 在输出路径创建配置文件(test_config.json)
+# 把当前配置文件序列化为json保存在输出路径(test_config.json)
 with open(os.path.join(args.out_dir,'test_config.json'), "w") as js_file:
     json.dump(config_dict, js_file, indent=4, sort_keys=True)
 
 # 配置参数：是否使用cuda
-# 配置文件中gpu_num字段为-1表示不想使用cuda，为0表示想使用cuda
-if config_dict["gpu_num"] != -1:
+if config_dict["gpu_num"] != -1:  # gpu_num为-1表示不想使用cuda
     # 新增环境变量
     os.environ["CUDA_VISIBLE_DEVICES"]= str(config_dict["gpu_num"])
     # 新增配置参数
     use_cuda = True
-else:
+else:  # gpu_num为其他表示想使用cuda
     use_cuda = False
 # 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
 use_cuda = use_cuda and torch.cuda.is_available()
@@ -153,17 +152,17 @@ def test_model(test_set):
     Loads trained event and entity models and test them on the test set
     :param test_set: 测试数据
     '''
+    # 加载模型
     device = torch.device("cuda:0" if use_cuda else "cpu")
-
-    cd_event_model = model_utils.load_check_point(config_dict["cd_event_model_path"])
-    cd_entity_model = model_utils.load_check_point(config_dict["cd_entity_model_path"])
-
+    cd_event_model = torch.load(config_dict["cd_event_model_path"])
+    cd_entity_model = torch.load(config_dict["cd_entity_model_path"])
     cd_event_model.to(device)
     cd_entity_model.to(device)
 
     # 加载外部wd ec结果
     doc_to_entity_mentions = model_utils.load_entity_wd_clusters(config_dict)
 
+    # 算法主体(数据，模型)
     _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model, device, config_dict, write_clusters=True, out_dir=args.out_dir,
                       doc_to_entity_mentions=doc_to_entity_mentions,analyze_scores=True)
 
@@ -178,12 +177,12 @@ def main():
     # 读入测试数据
     print('Loading test data...')
     logging.info('Loading test data...')
-    with open(config_dict["test_path"], 'rb') as f:
+    with open(config_dict["test_path"], 'rb') as f:  # test_path是测试数据路径
         test_data = cPickle.load(f)
     print('Test data have been loaded.')
     logging.info('Test data have been loaded.')
 
-    # 跑模型进行测试
+    # 运行算法进行测试
     test_model(test_data)  # test_model这玩意是上边定义的函数
 
 
