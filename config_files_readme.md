@@ -47,9 +47,9 @@ Used with the script src/all_models/predict_model.py .
 The provided test_config.json file is configured to test the joint model for cross-document entity and event coreference.
 
 The main attributes of this configuration files are:
-* `test_path` - path to the pickle file of the test set, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
-* `cd_event_model_path` - path to the tested event model file.
-* `cd_entity_model_path` - path to the tested entity model file.
+* `test_path` - 存放测试数据的路径。path to the pickle file of the test set, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
+* `cd_event_model_path` - 事件模型的路径。path to the tested event model file.
+* `cd_entity_model_path` - 实体模型的路径。path to the tested entity model file.
 * `gpu_num` - -1表示不想尝试使用cuda，其他值(一般用0)表示想尝试使用cuda。
 * `event_merge_threshold/entity_merge_threshold` - merge threshold during testing, tuned on the dev set.
 * `use_elmo` - ?
