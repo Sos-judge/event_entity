@@ -9,12 +9,7 @@ import logging
 import argparse
 import torch
 
-
 print("环境变量：", os.environ["PATH"], "\n")
-
-print("cuda版本：")
-os.system("nvcc --version")
-print()
 
 # 把"工作路径/src"下的文件都加入搜索路径
 for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
@@ -35,6 +30,7 @@ if not os.path.exists(args.out_dir):
 # 根据config_path参数，读取配置文件(test_config.json)
 with open(args.config_path, 'r') as js_file:
     config_dict = json.load(js_file)
+    print(config_dict)
 
 # 把当前配置文件序列化为json保存在输出路径(test_config.json)
 with open(os.path.join(args.out_dir,'test_config.json'), "w") as js_file:
@@ -51,7 +47,8 @@ else:  # gpu_num为其他表示想使用cuda
 # 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
 use_cuda = use_cuda and torch.cuda.is_available()
 if use_cuda:
-    print('使用cuda')
+    print('使用cuda，cuda版本：')
+    os.system("nvcc --version")
 else:
     print("不使用cuda")
 
@@ -152,10 +149,20 @@ def test_model(test_set):
     Loads trained event and entity models and test them on the test set
     :param test_set: 测试数据
     '''
+    # 加载设备
+    if use_cuda:
+        cudan = "cuda:"+config_dict["gpu_num"]
+        device = torch.device(cudan)
+    else:
+        device = torch.device("cpu")
     # 加载模型
-    device = torch.device("cuda:0" if use_cuda else "cpu")
-    cd_event_model = torch.load(config_dict["cd_event_model_path"])
-    cd_entity_model = torch.load(config_dict["cd_entity_model_path"])
+    if use_cuda:  # 训练模型时使用的是0号GPU，现在使用n号GPU，需要转换
+        cd_event_model = torch.load(config_dict["cd_event_model_path"], map_location={'cuda:0': cudan})
+        cd_entity_model = torch.load(config_dict["cd_entity_model_path"], map_location={'cuda:0': cudan})
+    else:  # 训练模型时使用的是0号GPU，现在使用CPU，需要转换
+        cd_event_model = torch.load(config_dict["cd_event_model_path"], map_location={'cuda:0': 'cpu'})
+        cd_entity_model = torch.load(config_dict["cd_entity_model_path"], map_location={'cuda:0': 'cpu'})
+    # 设备迁移
     cd_event_model.to(device)
     cd_entity_model.to(device)
 
