@@ -170,8 +170,11 @@ def test_model(test_set):
     doc_to_entity_mentions = model_utils.load_entity_wd_clusters(config_dict)
 
     # 算法主体(数据，模型)
-    _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model, device, config_dict, write_clusters=True, out_dir=args.out_dir,
-                      doc_to_entity_mentions=doc_to_entity_mentions,analyze_scores=True)
+    _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model,
+                                  device, config_dict, write_clusters=True,
+                                  out_dir=args.out_dir,
+                                  doc_to_entity_mentions=doc_to_entity_mentions,
+                                  analyze_scores=True)
 
     run_conll_scorer()
 
