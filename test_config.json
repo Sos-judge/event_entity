@@ -3,7 +3,7 @@
   "cd_event_model_path": "models/cybulska_setup/cd_event_best_model",
   "cd_entity_model_path": "models/cybulska_setup/cd_entity_best_model",
 
-  "gpu_num": 0,
+  "gpu_num": -1,
   "event_merge_threshold": 0.5,
   "entity_merge_threshold": 0.5,
   "use_elmo": true,
