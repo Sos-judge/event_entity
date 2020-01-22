@@ -17,7 +17,7 @@ The model was trained and evaluated on the ECB+ corpus.
     * 我使用cpuonly和win64:
     `pip install http://download.pytorch.org/whl/cpu/torch-0.4.0-cp36-cp36m-win_amd64.whl`
 * [spaCy](https://spacy.io/) 2.0.18
-    *  Install the spacy en model with `python -m spacy download en`
+    *  安装完spaCy后，再Install the spacy en model with `python -m spacy download en`，注意这个安装需要管理员权限来完成软连接。
 * [Matplotlib](https://matplotlib.org/) 3.0.2
 * [NumPy](https://www.numpy.org/) 1.16.1(应该是1.17.3)
 * [NLTK](https://www.nltk.org/) 3.4
