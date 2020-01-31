@@ -115,34 +115,57 @@ def load_entity_wd_clusters(config_dict):
     '''
     Loads from a file the within-document (WD) entity coreference clusters predicted by an external WD entity coreference
     model/tool and ordered those clusters in a dictionary according to their documents.
+
     :param config_dict: a configuration dictionary that contains a path to a file stores the
-    within-document (WD) entity coreference clusters predicted by an external WD entity coreference
-    system.
+     within-document (WD) entity coreference clusters predicted by an external WD entity coreference
+     system. 其实就是根据配置文件读取WD实体共指的结果，然后按照“文档id-句子id”的二级顺序结构排个序。
     :return: a dictionary contains a mapping of a documents to their predicted entity clusters
+    '''
+    '''
+    读取的WD实体共指结果，按照行文顺序（文章序号+句子序号）存储于这个数据结构中
+    doc_to_entity_mentions = {
+        'doc_id文档序号': {
+            'sent_id句子序号': []
+        }
+    }
     '''
     doc_to_entity_mentions = {}
 
+    # 读取json文件
     with open(config_dict["wd_entity_coref_file"], 'r') as js_file:
+        # 把json文件反序列化为变量
         js_mentions = json.load(js_file)
+        '''
+        js_mentions =[
+            {'doc_id': '???.xml', 'sent_id': ?, 'tokens_numbers':[?,?],....},
+            {'doc_id': '???.xml', 'sent_id': ?, 'tokens_numbers':[?,?],....},
+            ...,
+            {'doc_id': '???.xml', 'sent_id': ?, 'tokens_numbers':[?,?],....}
+        ]
+        '''
 
     # load all entity mentions in the json
     for js_mention in js_mentions:
+        # 1.按照[doc_id][sent_id]的层级，构建doc_to_entity_mentions的二级顺序结构
+        # 1.1 添加一级元素doc_id（不重复添加）
         doc_id = js_mention["doc_id"].replace('.xml', '')
         if doc_id not in doc_to_entity_mentions:
             doc_to_entity_mentions[doc_id] = {}
+        # 1.2 添加二级元素sent_id（不重复添加）
         sent_id = js_mention["sent_id"]
         if sent_id not in doc_to_entity_mentions[doc_id]:
             doc_to_entity_mentions[doc_id][sent_id] = []
+        # 2.doc_to_entity_mentions字典中二级顺序结构构建完成，接下来就是把json文件中的数据转移过来
         tokens_numbers = js_mention["tokens_numbers"]
         mention_str = js_mention["tokens_str"]
-
         try:
             coref_chain = js_mention["coref_chain"]
         except:
             continue
-
-        doc_to_entity_mentions[doc_id][sent_id].append((doc_id, sent_id, tokens_numbers,
-                                                        mention_str, coref_chain))
+        # 3.填充特征
+        doc_to_entity_mentions[doc_id][sent_id].append((
+            doc_id, sent_id, tokens_numbers, mention_str, coref_chain
+        ))
     return doc_to_entity_mentions
 
 
@@ -1527,8 +1550,9 @@ def test_model(clusters, other_clusters, model, device, topic_docs, is_event, ep
 def test_models(test_set, cd_event_model,cd_entity_model, device,
                 config_dict, write_clusters, out_dir, doc_to_entity_mentions, analyze_scores):
     '''
-    Runs the inference procedure for both event and entity models calculates the B-cubed
+    Runs the inference procedure for both event and entity models, calculates the B-cubed
     score of their predictions.
+
     :param test_set: Corpus object containing the test documents.
     :param cd_event_model: CDCorefScorer object models cross-document event coreference decisions
     :param cd_entity_model: CDCorefScorer object models cross-document entity coreference decisions
@@ -1537,7 +1561,7 @@ def test_models(test_set, cd_event_model,cd_entity_model, device,
     :param write_clusters: whether to write predicted clusters to file (for analysis purpose)
     :param out_dir: output files directory
     :param doc_to_entity_mentions: a dictionary contains the within-document (WD) entity coreference
-    chains predicted by an external (WD) entity coreference system.
+      chains predicted by an external (WD) entity coreference system.
     :param analyze_scores: whether to save representations and Corpus objects for analysis
     :return: B-cubed scores for the predicted event and entity clusters
     '''
