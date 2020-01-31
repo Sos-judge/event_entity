@@ -76,13 +76,10 @@ logging.basicConfig(
 
 # 下边是自己写的包
 # 这些包得放在logger之后，因为他们用到了logger
-# from classes import *
-from src.shared.classes import *
-# from eval_utils import *
-from src.shared.eval_utils import *
-# from model_utils import *
-# import model_utils
-import src.all_models.model_utils as model_utils
+# 这个classes类定义了corpus、topic、document等基本类，而测试集是以corpus类对象的形式存储的
+from src.shared.classes import *  # from classes import *
+from src.shared.eval_utils import *  # from eval_utils import *
+import src.all_models.model_utils as model_utils  # from model_utils import *
 
 
 def read_conll_f1(filename):
@@ -191,8 +188,14 @@ def main():
     # 读入测试数据
     print('Loading test data...')
     logging.info('Loading test data...')
+    # 根据配置文件加载测试集
     with open(config_dict["test_path"], 'rb') as f:  # test_path是测试数据路径
         test_data = cPickle.load(f)
+        '''
+        测试集test_data是一个自定义类Corpus的实例化对象，Corpus类在sr/shared/classes.py中定义
+          Corpus包含Topic；Topic包含Document(以及E和V指称)；Document包含Sentence
+          Sentence包含Token(以及真实的和预测的E和V指称)；...
+        '''
     print('Test data have been loaded.')
     logging.info('Test data have been loaded.')
 
