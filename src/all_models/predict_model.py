@@ -76,10 +76,14 @@ logging.basicConfig(
 
 # 下边是自己写的包
 # 这些包得放在logger之后，因为他们用到了logger
-from classes import *
-from eval_utils import *
+# from classes import *
+from src.shared.classes import *
+# from eval_utils import *
+from src.shared.eval_utils import *
 # from model_utils import *
-import model_utils
+# import model_utils
+import src.all_models.model_utils as model_utils
+
 
 def read_conll_f1(filename):
     '''
@@ -162,7 +166,7 @@ def test_model(test_set):
     else:  # 训练模型时使用的是0号GPU，现在使用CPU，需要转换
         cd_event_model = torch.load(config_dict["cd_event_model_path"], map_location={'cuda:0': 'cpu'})
         cd_entity_model = torch.load(config_dict["cd_entity_model_path"], map_location={'cuda:0': 'cpu'})
-    # 设备迁移
+    # 把模型放到设备中
     cd_event_model.to(device)
     cd_entity_model.to(device)
 
