@@ -1,9 +1,10 @@
 import math
 import torch
 import torch.nn as nn
-from model_utils import *
 import torch.nn.functional as F
 import torch.autograd as autograd
+
+import src.all_models.model_utils
 
 
 class CDCorefScorer(nn.Module):

@@ -4,19 +4,12 @@ import logging
 import operator
 import collections
 
-for pack in os.listdir("src"):
-    sys.path.append(os.path.join("src", pack))
+import src.shared.classes
 
-sys.path.append("/src/shared/")
 
 written_mentions = 0
 cd_clusters_count = 10000
 wd_clusters_count = 10
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-from classes import *
 
 
 def write_span_based_cd_coref_clusters(corpus, out_file, is_event, is_gold, use_gold_mentions):
@@ -120,10 +113,10 @@ def write_span_based_cd_coref_clusters(corpus, out_file, is_event, is_gold, use_
         out_coref.write('\n')
 
     out_coref.close()
-    logger.info('{} mentions have been written.'.format(mentions_count))
+    logging.info('{} mentions have been written.'.format(mentions_count))
 
 
-def write_clusters_to_file(clusters, file_obj,topic):
+def write_clusters_to_file(clusters, file_obj, topic):
     '''
     Write the clusters to a text file (used for analysis)
     :param clusters: list of Cluster objects
@@ -141,7 +134,7 @@ def write_clusters_to_file(clusters, file_obj,topic):
         file_obj.write(str(mentions_list) + '\n\n')
 
 
-def write_mention_based_cd_clusters(corpus, is_event, is_gold,out_file):
+def write_mention_based_cd_clusters(corpus, is_event, is_gold, out_file):
     '''
     This function writes the cross-document (CD) predicted clusters to a file (in a CoNLL format)
     in a mention based manner, means that each token represents a mention and its coreference chain id is marked

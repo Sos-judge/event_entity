@@ -2,25 +2,22 @@ import os
 import sys
 import json
 import spacy
+from spacy.lang.en import English
 import torch
 import random
 import logging
 import itertools
 import collections
 import numpy as np
-from scorer import *
-from eval_utils import *
 import _pickle as cPickle
-from bcubed_scorer import *
 import matplotlib.pyplot as plt
-from spacy.lang.en import English
 
-for pack in os.listdir("src"):
-    sys.path.append(os.path.join("src", pack))
+import src.all_models.scorer  # 我为下边的函数添加了参数类型注释，其中涉及dl模型的类型
+import src.shared.eval_utils
+import src.all_models.bcubed_scorer
+from src.shared.classes import Corpus, Topic, Cluster
+import src.all_models.models
 
-sys.path.append("/src/shared/")
-
-from classes import *
 
 clusters_count = 1
 
@@ -75,7 +72,7 @@ def load_predicted_topics(test_set, config_dict):
     topic_counter = 1
     for topic in predicted_topics:
         topic_id = str(topic_counter)
-        new_topics[topic_id] = Topic(topic_id)
+        new_topics[topic_id] = src.shared.classes.Topic(topic_id)
 
         for doc_name in topic:
             print(topic_id)
@@ -208,7 +205,7 @@ def init_entity_wd_clusters(entity_mentions, doc_to_entity_mentions):
                 doc_to_clusters[doc_id] = {}
             pred_coref_chain = found_entity[4]
             if pred_coref_chain not in doc_to_clusters[doc_id]:
-                doc_to_clusters[doc_id][pred_coref_chain] = Cluster(is_event=False)
+                doc_to_clusters[doc_id][pred_coref_chain] = src.shared.classes.Cluster(is_event=False)
             doc_to_clusters[doc_id][pred_coref_chain].mentions[entity.mention_id] = entity
         else:
             doc_id = entity.doc_id
@@ -706,14 +703,14 @@ def write_event_coref_results(corpus, out_dir, config_dict):
     '''
     if not config_dict["test_use_gold_mentions"]:
         out_file = os.path.join(out_dir, 'CD_test_event_span_based.response_conll')
-        write_span_based_cd_coref_clusters(corpus, out_file, is_event=True, is_gold=False,
+        src.shared.eval_utils.write_span_based_cd_coref_clusters(corpus, out_file, is_event=True, is_gold=False,
                                            use_gold_mentions=config_dict["test_use_gold_mentions"])
     else:
         out_file = os.path.join(out_dir, 'CD_test_event_mention_based.response_conll')
-        write_mention_based_cd_clusters(corpus, is_event=True, is_gold=False, out_file=out_file)
+        src.shared.eval_utils.write_mention_based_cd_clusters(corpus, is_event=True, is_gold=False, out_file=out_file)
 
         out_file = os.path.join(out_dir, 'WD_test_event_mention_based.response_conll')
-        write_mention_based_wd_clusters(corpus, is_event=True, is_gold=False, out_file=out_file)
+        src.shared.eval_utils.write_mention_based_wd_clusters(corpus, is_event=True, is_gold=False, out_file=out_file)
 
 
 def write_entity_coref_results(corpus, out_dir,config_dict):
@@ -725,14 +722,14 @@ def write_entity_coref_results(corpus, out_dir,config_dict):
     '''
     if not config_dict["test_use_gold_mentions"]:
         out_file = os.path.join(out_dir, 'CD_test_entity_span_based.response_conll')
-        write_span_based_cd_coref_clusters(corpus, out_file, is_event=False, is_gold=False,
+        src.shared.eval_utils.write_span_based_cd_coref_clusters(corpus, out_file, is_event=False, is_gold=False,
                                            use_gold_mentions=config_dict["test_use_gold_mentions"])
     else:
         out_file = os.path.join(out_dir, 'CD_test_entity_mention_based.response_conll')
-        write_mention_based_cd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
+        src.shared.eval_utils.write_mention_based_cd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
 
         out_file = os.path.join(out_dir, 'WD_test_entity_mention_based.response_conll')
-        write_mention_based_wd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
+        src.shared.eval_utils.write_mention_based_wd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
 
 
 def create_event_cluster_bow_lexical_vec(event_cluster,model, device, use_char_embeds,
@@ -1546,24 +1543,36 @@ def test_model(clusters, other_clusters, model, device, topic_docs, is_event, ep
           topics_counter, topics_num, threshold, is_event, use_args_feats,
           use_binary_feats)
 
-
-def test_models(test_set, cd_event_model,cd_entity_model, device,
-                config_dict, write_clusters, out_dir, doc_to_entity_mentions, analyze_scores):
+def test_models(test_set: Corpus,
+                cd_event_model: src.all_models.models.CDCorefScorer,
+                cd_entity_model: src.all_models.models.CDCorefScorer,
+                device,
+                config_dict: dict, write_clusters: bool, out_dir: str,
+                doc_to_entity_mentions: dict,
+                analyze_scores:bool
+                ):
     '''
     Runs the inference procedure for both event and entity models, calculates the B-cubed
     score of their predictions.
 
-    :param test_set: Corpus object containing the test documents.
-    :param cd_event_model: CDCorefScorer object models cross-document event coreference decisions
-    :param cd_entity_model: CDCorefScorer object models cross-document entity coreference decisions
+    :param test_set: 测试集
+    :param cd_event_model: CD event coreference model
+    :param cd_entity_model: CD entity coreference model
     :param device: Pytorch device
-    :param config_dict: a dictionary contains the experiment's configurations
+    :param config_dict: 试验配置文件
     :param write_clusters: whether to write predicted clusters to file (for analysis purpose)
     :param out_dir: output files directory
-    :param doc_to_entity_mentions: a dictionary contains the within-document (WD) entity coreference
-      chains predicted by an external (WD) entity coreference system.
+    :param doc_to_entity_mentions: 外部实体共指消解器预测的文档内实体共指结果，用做实体共指簇的初始值
     :param analyze_scores: whether to save representations and Corpus objects for analysis
     :return: B-cubed scores for the predicted event and entity clusters
+    '''
+    # a = src.all_models.models.CDCorefScorer(1,2,3,4,5,6,7,8,9,0)
+    '''
+    test_set: Corpus,
+                cd_event_model: models.CDCorefScorer, cd_entity_model: CDCorefScorer,
+                device: torch.device,
+                config_dict: dict, write_clusters: bool, out_dir: str,
+                doc_to_entity_mentions: dict, analyze_scores: bool)
     '''
 
     global clusters_count
@@ -1669,12 +1678,12 @@ def test_models(test_set, cd_event_model,cd_entity_model, device,
                 all_entity_clusters.extend(topic_entity_clusters)
 
                 with open(os.path.join(out_dir, 'entity_clusters.txt'), 'a') as entity_file_obj:
-                    write_clusters_to_file(topic_entity_clusters, entity_file_obj, topic_id)
+                    src.shared.eval_utils.write_clusters_to_file(topic_entity_clusters, entity_file_obj, topic_id)
                     entity_errors.extend(collect_errors(topic_entity_clusters, topic_event_clusters, topic.docs,
                                                         is_event=False))
 
                 with open(os.path.join(out_dir, 'event_clusters.txt'), 'a') as event_file_obj:
-                    write_clusters_to_file(topic_event_clusters, event_file_obj, topic_id)
+                    src.shared.eval_utils.write_clusters_to_file(topic_event_clusters, event_file_obj, topic_id)
                     event_errors.extend(collect_errors(topic_event_clusters, topic_entity_clusters, topic.docs,
                                                        is_event=True))
 

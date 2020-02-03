@@ -1,3 +1,4 @@
+# 三方包
 import os
 import sys
 import json
@@ -9,12 +10,30 @@ import logging
 import argparse
 import torch
 
-print("环境变量：", os.environ["PATH"], "\n")
+# 本地包
+import src.shared.eval_utils
+import src.all_models.model_utils
+import src.shared.classes as classes
 
+
+# print("环境变量：", os.environ["PATH"], "\n")
+
+'''
 # 把"工作路径/src"下的文件都加入搜索路径
 for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
     # 把每个文件加入到包的搜索路径
     sys.path.append(os.path.join("src", pack))
+'''
+# 把项目根路径添加到模块搜索路径中
+projectRootPath = os.path.abspath(os.path.join(__file__, "..", ".."))
+sys.path.append(projectRootPath)
+
+'''
+因为现有数据在序列化的时候是用的classes.Topic等名字,而现在是src.shared.classes.Topic等
+名字，不能对应，你反序列化之后识别不了。所以权宜之计是先按原来的方法import一遍
+'''
+sys.path.append(os.path.abspath(os.path.join(projectRootPath, "shared")))
+from classes import *
 
 # 配置参数：命令行参数解器
 parser = argparse.ArgumentParser(description='Testing the regressors')
@@ -65,7 +84,7 @@ if use_cuda:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# 创建logger
+# 配置logger
 logging.basicConfig(
     # 使用fileHandler,日志文件在输出路径中(test_log.txt)
     filename=os.path.join(args.out_dir, "test_log.txt"),
@@ -73,13 +92,6 @@ logging.basicConfig(
     # 配置日志级别
     level=logging.INFO
 )
-
-# 下边是自己写的包
-# 这些包得放在logger之后，因为他们用到了logger
-# 这个classes类定义了corpus、topic、document等基本类，而测试集是以corpus类对象的形式存储的
-from src.shared.classes import *  # from classes import *
-from src.shared.eval_utils import *  # from eval_utils import *
-import src.all_models.model_utils as model_utils  # from model_utils import *
 
 
 def read_conll_f1(filename):
@@ -145,11 +157,12 @@ def run_conll_scorer():
     scores_file.close()
 
 
-def test_model(test_set):
-    '''
+def test_model(test_set: src.shared.classes.Corpus):
+    r"""
     Loads trained event and entity models and test them on the test set
+
     :param test_set: 测试数据
-    '''
+    """
     # 加载设备
     if use_cuda:
         cudan = "cuda:"+config_dict["gpu_num"]
@@ -168,10 +181,10 @@ def test_model(test_set):
     cd_entity_model.to(device)
 
     # 加载外部wd ec结果
-    doc_to_entity_mentions = model_utils.load_entity_wd_clusters(config_dict)
+    doc_to_entity_mentions = src.all_models.model_utils.load_entity_wd_clusters(config_dict)
 
     # 算法主体(数据，模型)
-    _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model,
+    _,_ = src.all_models.model_utils.test_models(test_set, cd_event_model, cd_entity_model,
                                   device, config_dict, write_clusters=True,
                                   out_dir=args.out_dir,
                                   doc_to_entity_mentions=doc_to_entity_mentions,
@@ -181,9 +194,9 @@ def test_model(test_set):
 
 
 def main():
-    '''
+    """
     This script loads the trained event and entity models and test them on the test set
-    '''
+    """
 
     # 读入测试数据
     print('Loading test data...')
