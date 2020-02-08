@@ -205,7 +205,8 @@ def main():
     with open(config_dict["test_path"], 'rb') as f:  # test_path是测试数据路径
         test_data = cPickle.load(f)
         '''
-        测试集test_data是一个自定义类Corpus的实例化对象，Corpus类在sr/shared/classes.py中定义
+        测试集test_data是一个自定义类Corpus的实例化对象
+        Corpus类在sr/shared/classes.py中定义
           Corpus包含Topic；Topic包含Document(以及E和V指称)；Document包含Sentence
           Sentence包含Token(以及真实的和预测的E和V指称)；...
         '''

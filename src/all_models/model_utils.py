@@ -110,23 +110,22 @@ def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
     return new_topics
 
 
-def topic_to_mention_list(topic, is_gold):
+def topic_to_mention_list(topic: Topic, is_gold: bool) -> tuple:
     '''
-    Gets a Topic object and extracts its event/entity mentions (depends on the is_event flag)
+    抽取topic中的gold mention或predicted mention(取决于is_gold参数),并组成列表返回。
     :param topic: a Topic object
-    :param is_event: a flag that denotes whether event mentions will be extracted or
-    entity mention will be extracted (True for event extraction, False for entity extraction)
     :param is_gold: a flag that denotes whether to extract gold mention or predicted mentions
-    :return: list of the topic's mentions (EventMention or EntityMention objects)
+    :return: (gold event mention list, gold entity mention list)或(predicted event mention list, predicted
+    entity mention list)
     '''
     event_mentions = []
     entity_mentions = []
-    for doc_id, doc in topic.docs.items():
-        for sent_id, sent in doc.sentences.items():
-            if is_gold:
+    for doc_id, doc in topic.docs.items():  # 遍历每个doc
+        for sent_id, sent in doc.sentences.items():  # 遍历每个sent(句子)
+            if is_gold:  # 抽取gold_mention
                 event_mentions.extend(sent.gold_event_mentions)
                 entity_mentions.extend(sent.gold_entity_mentions)
-            else:
+            else:  # 抽取predicted_mention
                 event_mentions.extend(sent.pred_event_mentions)
                 entity_mentions.extend(sent.pred_entity_mentions)
 
@@ -367,7 +366,7 @@ def is_stop(w):
 
 def clean_word(word):
     '''
-    Removes apostrophes before look for a word in the word embeddings vocabulary.
+    Removes apostrophes(' or 's or ") before look for a word in the word embeddings vocabulary.
     :param word: a word (string)
     :return: the word (string) after removing the apostrophes.
     '''
@@ -392,6 +391,7 @@ def find_word_embed(word, model, device):
     '''
     Given a word (string), this function fetches its word embedding (or unknown embeddings for
     OOV words)
+
     :param word: a word (string)
     :param model: CDCorefScorer object
     :param device: Pytorch device (gpu/cpu)
@@ -408,7 +408,7 @@ def find_word_embed(word, model, device):
         else:
             word_ix = [word_to_ix['unk']]
 
-    word_tensor = model.embed(torch.tensor(word_ix,dtype=torch.long).to(device))
+    word_tensor = model.embed(torch.tensor(word_ix, dtype=torch.long).to(device))
 
     return word_tensor
 
@@ -1034,7 +1034,7 @@ def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
     :return: a tensor with size (1, 1374)
     '''
 
-    span_tensor = mention.head_elmo_embeddings.to(device).view(1,-1)
+    span_tensor = mention.head_elmo_embeddings.to(device).view(1, -1)
 
     if is_event:
         head = mention.mention_head
@@ -1066,20 +1066,27 @@ def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
     return mention_span_rep
 
 
-def create_mention_span_representations(mentions, model, device, topic_docs, is_event,
-                                        requires_grad):
+def create_mention_span_representations(
+        mentions: list,
+        model: src.all_models.models.CDCorefScorer,
+        device: torch.device,
+        topic_docs: dict,
+        is_event: bool,
+        requires_grad: bool
+):
     '''
     Creates for a set of mentions their context and span text vectors.
-    :param mentions: a list of Mention objects (an EventMention or an EntityMention)
+    :param mentions: a list of EventMention objects (or a list of EntityMention objects)
     :param model: CDCorefScorer object, should be in the same type as the mentions
     :param device: Pytorch device
-    :param topic_docs: the current topic's documents
+    :param topic_docs: the current topic's documents, like {'45_6ecb': Document object,...}
     :param is_event: True if mention is an event mention and False if it is an entity mention
     :param requires_grad: True if tensors require gradients (for training time) , and
     False for inference time.
      embeddings (performs worse than ELMo embeddings)
     '''
-    for mention in mentions:
+    for mention in mentions:  # mentions = [mention object,...]
+        # mention = mention object
         mention.span_rep = get_mention_span_rep(mention, device, model, topic_docs,
                                                 is_event, requires_grad)
 
@@ -1618,11 +1625,13 @@ def test_models(
             logging.info('Topic {}:'.format(topic_id))
             print('\nTopic {}:'.format(topic_id))
 
-            # 初始化：实体和事件抽取
-            event_mentions, entity_mentions = topic_to_mention_list(topic,
-                                                                    is_gold=config_dict["test_use_gold_mentions"])
-            all_event_mentions.extend(event_mentions)
-            all_entity_mentions.extend(entity_mentions)
+            # 初始化：实体和事件抽取(使用真实事件和实体mention)
+            event_mentions, entity_mentions = topic_to_mention_list(
+                                                                    topic,
+                                                                    is_gold=config_dict["test_use_gold_mentions"]
+                                                                    )
+            all_event_mentions.extend(event_mentions)  # 把抽取得到的本topic下的事件指称累计到全部事件指称列表
+            all_entity_mentions.extend(entity_mentions)  # 把抽取得到的本topic下的实体指称累计到全部实体指称列表
 
             # 事件和实体的表征
             # create span rep for both entity and event mentions
