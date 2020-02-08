@@ -51,37 +51,62 @@ def merge_sub_topics_to_topics(test_set):
     return new_topics
 
 
-def load_predicted_topics(test_set, config_dict):
+def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
     '''
-    Loads the document clusters that were predicted by a document clustering algorithm and
-    organize the test's documents to topics according to document clusters.
-    :param test_set: A Corpus object represents the test set
-    :param config_dict: a configuration dictionary that contains a path to a file
-    stores the results of the document clustering algorithm.
-    :return:  a dictionary contains the documents ordered according to the predicted topics
+    ecb语料库中是一个topic包含多个doc，即为真实的topic-doc对应关系。现在我抛弃这个对应关系，
+    基于别的文档聚类算法，直接根据doc做文档聚类，得到预测的topic-doc对应关系。
+    这个函数的作用就是把按照真实topic-doc对应关系组织的语料，根据预测的topic-doc对应关系重新排序组织。
+    :param test_set: 原测试集，按照真实topic-doc对应关系组织document实例。
+    :param config_dict: 字典对象，其中"predicted_topics_path"项是一个描述文件路径的字符串，文件保存
+    了预测的topic-doc对应关系(即文档聚类结果)。
+    :return:  新测试集，按照预测topic-doc对应关系组织document实例。
     '''
-    new_topics = {}
-    with open(config_dict["predicted_topics_path"], 'rb') as f:
-        predicted_topics = cPickle.load(f)
+    print('\n按照外部文档聚类结果重新组织测试集：开始...', end='')
+    # 1.把所有文档对象从原测试集中抽取出来（舍弃真实topic-doc对应关系）
+    # 1.1.遍历得到文档对象的列表
     all_docs = []
     for topic in test_set.topics.values():
         all_docs.extend(topic.docs.values())
+    '''
+    all_docs = [Document对象, Document对象, ...]
+    '''
+    # 1.2.把列表转成字典
+    all_doc_dict = {doc.doc_id: doc for doc in all_docs}
+    '''
+        all_docs = {'36_1ecb':Document对象, '36_2ecb':Document对象, ...}
+    '''
 
-    all_doc_dict = {doc.doc_id:doc for doc in all_docs }
+    # 2.根据配置从文件中加载“预测的topic-doc对应关系”(文档聚类结果)
+    with open(config_dict["predicted_topics_path"], 'rb') as f:
+        predicted_topics = cPickle.load(f)
+    ''' 
+        predicted_topics是文档聚类结果
+        predicted_topics = [
+            ['45_6ecb', '45_8ecb'],  # 这是一个簇
+            ['43_6ecb',43_4ecb]，  # 这是一个簇
+            ...
+        ]
+    '''
 
+    # 3.把抽取出来的文档对象按照预测的topic-doc对应关系重新组织
+    new_topics = {}  # 新的测试集
     topic_counter = 1
-    for topic in predicted_topics:
+    # 按照预测的topic-doc对应关系遍历，构建新的测试集
+    for topic in predicted_topics:  # topic=['45_6ecb', '45_8ecb',...]
+        # 在新的测试集中构建topic（但是topic是空的，下面还没有doc）
         topic_id = str(topic_counter)
         new_topics[topic_id] = src.shared.classes.Topic(topic_id)
-
+        print('\nTopic', topic_id, ':', end='')
+        # 把原测试集中的doc对象挪到新测试集的topic下面
         for doc_name in topic:
-            print(topic_id)
-            print(doc_name)
+            print(doc_name, end='')
             if doc_name in all_doc_dict:
                 new_topics[topic_id].docs[doc_name] = all_doc_dict[doc_name]
         topic_counter += 1
+    print()
 
-    print(len(new_topics))
+    print('共有', len(new_topics), '个topic')
+    print('按照外部文档聚类结果重新组织测试集：结束...')
     return new_topics
 
 
@@ -111,21 +136,16 @@ def topic_to_mention_list(topic, is_gold):
 def load_entity_wd_clusters(config_dict):
     '''
     Loads from a file the within-document (WD) entity coreference clusters predicted by an external WD entity coreference
-    model/tool and ordered those clusters in a dictionary according to their documents.
+    model/tool and ordered those clusters in a dictionary according to their documents.其实就是根据配置读取外部WD实体共指
+    的结果，然后按照“文档id-句子id”的二级顺序结构排个序。
 
     :param config_dict: a configuration dictionary that contains a path to a file stores the
      within-document (WD) entity coreference clusters predicted by an external WD entity coreference
-     system. 其实就是根据配置文件读取WD实体共指的结果，然后按照“文档id-句子id”的二级顺序结构排个序。
-    :return: a dictionary contains a mapping of a documents to their predicted entity clusters
+     system.一个字典对象，其中"wd_entity_coref_file"项的值是一个地址，指向“外部WD实体共指
+     的结果”
+    :return: 按照行文顺序（文章序号+句子序号）排序后的“外部WD实体共指的结果”。数据结构为{ 'doc_id文档序号': {'sent_id句子序号': [共指信息]}   }
     '''
-    '''
-    读取的WD实体共指结果，按照行文顺序（文章序号+句子序号）存储于这个数据结构中
-    doc_to_entity_mentions = {
-        'doc_id文档序号': {
-            'sent_id句子序号': []
-        }
-    }
-    '''
+
     doc_to_entity_mentions = {}
 
     # 读取json文件
@@ -1543,14 +1563,15 @@ def test_model(clusters, other_clusters, model, device, topic_docs, is_event, ep
           topics_counter, topics_num, threshold, is_event, use_args_feats,
           use_binary_feats)
 
-def test_models(test_set: Corpus,
-                cd_event_model: src.all_models.models.CDCorefScorer,
-                cd_entity_model: src.all_models.models.CDCorefScorer,
-                device,
-                config_dict: dict, write_clusters: bool, out_dir: str,
-                doc_to_entity_mentions: dict,
-                analyze_scores:bool
-                ):
+def test_models(
+    test_set: Corpus,
+    cd_event_model: src.all_models.models.CDCorefScorer,
+    cd_entity_model: src.all_models.models.CDCorefScorer,
+    device: torch.device,
+    config_dict: dict, write_clusters: bool, out_dir: str,
+    doc_to_entity_mentions: dict,
+    analyze_scores: bool
+):
     '''
     Runs the inference procedure for both event and entity models, calculates the B-cubed
     score of their predictions.
@@ -1566,15 +1587,6 @@ def test_models(test_set: Corpus,
     :param analyze_scores: whether to save representations and Corpus objects for analysis
     :return: B-cubed scores for the predicted event and entity clusters
     '''
-    # a = src.all_models.models.CDCorefScorer(1,2,3,4,5,6,7,8,9,0)
-    '''
-    test_set: Corpus,
-                cd_event_model: models.CDCorefScorer, cd_entity_model: CDCorefScorer,
-                device: torch.device,
-                config_dict: dict, write_clusters: bool, out_dir: str,
-                doc_to_entity_mentions: dict, analyze_scores: bool)
-    '''
-
     global clusters_count
     clusters_count = 1
     event_errors = []
@@ -1582,18 +1594,21 @@ def test_models(test_set: Corpus,
     all_event_clusters = []
     all_entity_clusters = []
 
-    if config_dict["load_predicted_topics"]:
-        topics = load_predicted_topics(test_set,config_dict) # use the predicted sub-topics
-    else:
-        topics = test_set.topics # use the gold sub-topics
+    # 选择文档聚类（就是topic-doc对应关系）
+    if config_dict["load_predicted_topics"]:  # 使用外部算法预测的文档聚类
+        # test_set是按照ecb真实文档聚类组织的，要按照外部算法预测的文档聚类重新排序组织
+        topics = load_predicted_topics(test_set, config_dict)  # use the predicted sub-topics
+    else:  # 使用ecb自带的真实文档聚类
+        # test_set本来就是按照ecb真实文档聚类组织的，无需处理
+        topics = test_set.topics  # use the gold sub-topics
 
     topics_num = len(topics.keys())
-    topics_counter = 0
-    topics_keys = topics.keys()
-    epoch = 0 #
+    topics_keys = topics.keys()  # topic_keys=[1,2,3,4,...,20]
+    epoch = 0  #
     all_event_mentions = []
     all_entity_mentions = []
 
+    topics_counter = 0
     with torch.no_grad():
         for topic_id in topics_keys:
             topic = topics[topic_id]
@@ -1601,7 +1616,7 @@ def test_models(test_set: Corpus,
 
             logging.info('=========================================================================')
             logging.info('Topic {}:'.format(topic_id))
-            print('Topic {}:'.format(topic_id))
+            print('\nTopic {}:'.format(topic_id))
 
             # 初始化：实体和事件抽取
             event_mentions, entity_mentions = topic_to_mention_list(topic,
