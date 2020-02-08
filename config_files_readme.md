@@ -59,8 +59,8 @@ The main attributes of this configuration files are:
 * `wd_entity_coref_file` - a path to a file (provided) which contains the predictions of a WD entity coreference system on the ECB+. We use CoreNLP for that purpose.
 * `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
 * `merge_iters` - 迭代次数，for i in range(1,config_dict["merge_iters"]+1)
-* `load_predicted_topics` - ?
-* `predicted_topics_path` - path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
+* `load_predicted_topics` - false:使用ecb本来的topic true:使用文档聚类算法预测的topic
+* `predicted_topics_path` - 如果上边那个选的true，那么这个就是存储“文档聚类算法预测的topic”的文件的路径。path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
 * `seed` - torch.manual_seed(config_dict["seed"])和torch.cuda.manual_seed(config_dict["seed"])
 * `random_seed` - random.seed(config_dict["random_seed"])和np.random.seed(config_dict["random_seed"])
 * `event_gold_file_path` - path to the key (gold) event coreference file (for running the evaluation with the CoNLL scorer), provided in this repo.
