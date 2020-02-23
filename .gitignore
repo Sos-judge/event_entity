@@ -2,5 +2,6 @@
 .vscode
 __pycache__
 /data/processed
+/data/raw
 /models
 /output
