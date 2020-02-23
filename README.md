@@ -34,16 +34,17 @@ The model was trained and evaluated on the ECB+ corpus.
    * 环境变量。Add your project root path as PYTHONPATH. One way is editting your env parameter, another way is createding the .pth file in Python Interpreter Home. For examlple, in C:\ProgramFiles\Anaconda3\envs\Barhom2019\mypath.pth, write: `E:\ProgramCode\Barhom2019Main\event_entity_coref_ecb_plus`
 * 运行。Run the script predict_model.py with the command:
     `python src/all_models/predict_model.py --config_path test_config.json --out_dir <output_directory>`
-    * `config_path` - a path to a JSON file holds the test configuration (test_config.json).
-     An explanation about this configuration file is provided in config_files_readme.md.
-    * `out_dir` - an output directory.
-    * 如果你使用默认配置，那就是:
-    `python src/all_models/predict_model.py --config_path test_config.json --out_dir output`
-* 输出。Main output:
-   * Two response (aka system prediction) files:
-      * `CD_test_entity_mention_based.response_conll` - cross-document entity coreference results in CoNLL format.
-      * `CD_test_event_mention_based.response_conll` - cross-document event coreference results in CoNLL format.
-   * `conll_f1_scores.txt` - A text file contains the CoNLL coreference scorer's output (F1 score).
+    * 参数where
+      * `config_path` - a path to a JSON file holds the test configuration (test_config.json).
+      An explanation about this configuration file is provided in config_files_readme.md.
+      * `out_dir` - an output directory.
+    * 例子：如果你使用默认配置，那就是:
+    E:\ProgramCode\Barhom2019Main\event_entity_coref_ecb_plus > `python src/all_models/predict_model.py --config_path test_config.json --out_dir output`
+   * 输出。Main output:
+      * Two response (aka system prediction) files:
+         * `CD_test_entity_mention_based.response_conll` - cross-document entity coreference results in CoNLL format.
+         * `CD_test_event_mention_based.response_conll` - cross-document event coreference results in CoNLL format.
+      * `conll_f1_scores.txt` - A text file contains the CoNLL coreference scorer's output (F1 score).
 
 Note - the script's configuration file (test_config.json) also requires: 
    * An output file of a within-document entity coreference system on the ECB+ corpus (provided in this repo at data/external/stanford_neural_wd_entity_coref_out/ecb_wd_coref.json)
@@ -79,19 +80,18 @@ In case you want to create the data from scratch, do the following steps:
 Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files).
 
 ### Loading the ECB+ corpus
-Extract the gold mentions and documents from the ECB+ corpus:
-   `python src/data/make_dataset.py --ecb_path <ecb_path> --output_dir <output_directory> --data_setup 2 --selected_sentences_file       data/raw/ECBplus_coreference_sentences.csv`
-
-Where:
-   * `ecb_path` - a directory contains the ECB+ documents (can be downloaded from *http://www.newsreader-project.eu/results/data/the-ecb-corpus/*).
-   * `output_dir` - output directory.
-   * `data_setup` - enter '2' to load the ECB+ data in the same evaluation setup as used in our experiments (see the setup description in the paper).
-   * `selected_sentences_file` - path to a CSV file contains the selected sentences.
-
-Output:
-The script saves for each data split (train/dev/test):
-* A json file contains its mention objects.
-* A text file contains its sentences.
+* Extract the gold mentions and documents from the ECB+ corpus:
+   `python src/data/make_dataset.py --ecb_path <ecb_path> --output_dir <output_directory> --data_setup 2 --selected_sentences_file data/raw/ECBplus_coreference_sentences.csv`
+   * Where:
+      * `ecb_path` - a directory contains the ECB+ documents (can be downloaded from *http://www.newsreader-project.eu/results/data/the-ecb-corpus/*).
+      * `output_dir` - output directory.
+      * `data_setup` - enter '2' to load the ECB+ data in the same evaluation setup as used in our experiments (see the setup description in the paper).
+      * `selected_sentences_file` - path to a CSV file contains the selected sentences.
+   * 例子：E:\ProgramCode\Barhom2019Main\event_entity_coref_ecb_plus > `python src/data/make_dataset.py --ecb_path data\raw\ECBplus --output_dir output --data_setup 2 --selected_sentences_file  data/raw/ECBplus_coreference_sentences.csv`
+   * Output:
+      The script saves for each data split (train/dev/test):
+      * A json file contains its mention objects.
+      * A text file contains its sentences.
 
 
 ### Feature extraction

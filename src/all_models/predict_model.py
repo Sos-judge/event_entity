@@ -15,7 +15,7 @@ import src.shared.eval_utils
 import src.all_models.model_utils
 import src.shared.classes as classes
 
-
+print(os.getcwd())
 # print("环境变量：", os.environ["PATH"], "\n")
 
 '''
