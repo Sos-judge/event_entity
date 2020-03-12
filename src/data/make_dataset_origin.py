@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# this .py file should be run with parameter:
+#   --ecb_path data\raw\ECBplus
+#   --output_dir output
+#   --data_setup 2
+#   --selected_sentences_file data\raw\ECBplus_coreference_sentences.csv
+
 # third part package
 import os
 import csv
@@ -49,17 +55,11 @@ class Token(object):
 
 
 def read_selected_sentences(filename):
-    r'''
+    '''
     This function reads the CSV file that was released with ECB+ corpus and returns a
     dictionary contains those sentences IDs. This file contains the IDs of 1840 sentences
     which were manually reviewed and checked for correctness.
     The ECB+ creators recommend to use this subset of the dataset.
-
-    example1:
-    filename = 'data\raw\ECBplus_coreference_sentences.csv'. and the content in this .csv file
-    is like "1 10ecbplus 1 \n  1 10ecbplus 3 \n 1 11ecbplus 1" .
-    return = {'1_10ecbplus.xml':[1,3],'1_11ecbplus.xml':[1]}
-
     :param filename: the CSV file
     :return: a dictionary, where a key is an XML filename (i.e. ECB+ document) and the value is a
     list contains all the sentences IDs that were selected from that XML filename.
@@ -226,7 +226,7 @@ def read_ecb_plus_doc(selected_sent_list, doc_filename, doc_id, file_obj,extract
     :param load_singletons:  a boolean variable indicates whether to read singleton mentions as in
     Cybulska setup or whether to ignore them as in Yang setup.
     '''
-    ecb_file = open(doc_filename, 'r')
+    ecb_file = open(doc_filename, 'r', encoding='utf-8')
     tree = ET.parse(ecb_file)
     root = tree.getroot()
 
@@ -406,7 +406,7 @@ def obj_dict(obj):
 
 def save_split_mentions_to_json(split_name, mentions_list):
     '''
-    This function gets  a mentions list of a specific split and saves its mentions in a JSON files.
+    This function gets a mentions list of a specific split and saves its mentions in a JSON files.
     Note that event and entity mentions are saved in separate files.
     :param split_name: the split name
     :param mentions_list: the split's extracted mentions list
@@ -433,69 +433,59 @@ def save_split_mentions_to_json(split_name, mentions_list):
 
 def parse_selected_sentences(xml_to_sent_dict, parse_all, load_singletons,data_setup):
     '''
+
     :param xml_to_sent_dict: selected sentences dictionary
     :param parse_all: a boolean variable indicates whether to read all the ECB+ corpus as in
     Yang setup or whether to filter the sentences according to a selected sentences list
     as in Cybulska setup.
     :param load_singletons:  boolean variable indicates whether to read singleton mentions as in
     Cybulska setup or whether to ignore them as in Yang setup.
-    :param data_setup: the variable indicates the evaluation setup (which topics is for dev set
-    and which is for train set) - 1 for Yang and Choubey setup and 2 for Cybulska Kenyon-Dean setup (recommended).
+    :param data_setup: the variable indicates the evaluation setup -
+     1 for Yang and Choubey setup and 2 for Cybulska Kenyon-Dean setup (recommended).
     '''
     if data_setup == 1:  # Yang setup
-        train_topics = range(1, 23)
-        dev_topics = range(23, 26)
+        train_topics = range(1,23)
+        dev_topics = range(23,26)
     else:  # Cybulska setup
         dev_topics = [2, 5, 12, 18, 21, 23, 34, 35]
-        train_topics = [i for i in range(1, 36) if i not in dev_topics]  # train topics 1-35 , test topics 36-45
+        train_topics = [i for i in range(1,36) if i not in dev_topics]  # train topics 1-35 , test topics 36-45
 
-    dev_out = open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w')
-    train_out = open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w')
-    test_out = open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w')
+    dev_out = open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='utf-8')
+    train_out = open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='utf-8')
+    test_out = open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='utf-8')
 
     dirs = os.listdir(args.ecb_path)
     dirs_int = [int(dir) for dir in dirs]
-
-    # classify all the ecb docs into train, dev, test set in sorted order.
-    train_ecb_files_sorted = []  # [([0, 3], 'data\\raw\\ECBplus\\1\\1_10ecb.xml', '1_10ecb'),...]
-    dev_ecb_files_sorted = []
+    train_ecb_files_sorted = []
     test_ecb_files_sorted = []
-    # classify all the ecb+ docs into train, dev, test set in sorted order.
     train_ecb_plus_files_sorted = []
-    dev_ecb_plus_files_sorted = []
     test_ecb_plus_files_sorted = []
+    dev_ecb_files_sorted = []
+    dev_ecb_plus_files_sorted = []
 
-    # traverse the topics
     for topic in sorted(dirs_int):
-        # cur topic
         dir = str(topic)
-        # get docs in cur topic
-        doc_files = os.listdir(os.path.join(args.ecb_path, dir))
-        # classify the docs: ecb， ecb+
+
+        doc_files = os.listdir(os.path.join(args.ecb_path,dir))
         ecb_files = []
         ecb_plus_files = []
         for doc_file in doc_files:
+
             if 'plus' in doc_file:
                 ecb_plus_files.append(doc_file)
             else:
                 ecb_files.append(doc_file)
-        # sort the docs
+
         ecb_files = sorted(ecb_files)
-        ecb_plus_files = sorted(ecb_plus_files)
-        # traverse the ecb docs
+        ecb_plus_files=sorted(ecb_plus_files)
+
         for ecb_file in ecb_files:
-            # if user want to parse all sentences, then process cur doc
-            # if user want to parse only the selected sentences, and cur doc includes at
-            #   least 1 selected sentence, then process cur doc
-            if parse_all or (ecb_file in xml_to_sent_dict):
-                # get the relative path of cur doc
-                xml_filename = os.path.join(os.path.join(args.ecb_path, dir), ecb_file)
-                # get the selected sentence id in cur doc
+            if parse_all or ecb_file in xml_to_sent_dict:
+                xml_filename = os.path.join(os.path.join(args.ecb_path,dir),ecb_file)
                 if parse_all:
                     selected_sentences = None
                 else:
                     selected_sentences = xml_to_sent_dict[ecb_file]
-                # classify cur doc into train/dev/test
                 if topic in train_topics:
                     train_ecb_files_sorted.append((selected_sentences, xml_filename,
                                                    ecb_file.replace('.xml', '')))
@@ -505,7 +495,7 @@ def parse_selected_sentences(xml_to_sent_dict, parse_all, load_singletons,data_s
                 else:
                     test_ecb_files_sorted.append((selected_sentences, xml_filename,
                                                   ecb_file.replace('.xml', '')))
-        # traverse the ecb+ docs
+
         for ecb_file in ecb_plus_files:
             if parse_all or ecb_file in xml_to_sent_dict:
                 xml_filename = os.path.join(os.path.join(args.ecb_path,dir),ecb_file)
@@ -532,7 +522,7 @@ def parse_selected_sentences(xml_to_sent_dict, parse_all, load_singletons,data_s
     test_extracted_mentions = []
 
     for doc in train_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], train_out, train_extracted_mentions, parse_all, load_singletons)
+        read_ecb_plus_doc(doc[0], doc[1],doc[2],train_out,train_extracted_mentions, parse_all, load_singletons)
 
     for doc in dev_files:
         read_ecb_plus_doc(doc[0], doc[1], doc[2], dev_out, dev_extracted_mentions, parse_all, load_singletons)
@@ -571,10 +561,8 @@ def main():
         parse_selected_sentences(xml_to_sent_dict={}, parse_all=True, load_singletons=False, data_setup=1)
     elif args.data_setup == 2:  # Reads the a reviewed subset of the ECB+ (Cybulska setup)
         xml_to_sent_dict = read_selected_sentences(args.selected_sentences_file)
-        parse_selected_sentences(xml_to_sent_dict=xml_to_sent_dict,
-                                 parse_all=False,
-                                 load_singletons=True,
-                                 data_setup=2)
+        parse_selected_sentences(xml_to_sent_dict=xml_to_sent_dict,parse_all=False,
+                                 load_singletons=True,data_setup=2)
     logger.info('ECB+ Reading was done.')
 
 
