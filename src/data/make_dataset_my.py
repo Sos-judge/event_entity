@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# this .py file should be run with parameter:
+#   --ecb_path data\raw\ECBplus
+#   --output_dir output
+#   --data_setup 2
+#   --selected_sentences_file data\raw\ECBplus_coreference_sentences.csv
+
 # third part package
 import os
 import csv
@@ -32,25 +38,6 @@ args = parser.parse_args()
 out_dir = args.output_dir
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
-
-# class Token(object):
-#     '''
-#     An helper class which represents a single when reading the corpus.
-#     '''
-#     def __init__(self, t_text, t_sentenceindex, t_tokenindex, rel_id=None):
-#         '''
-#
-#         :param text: The token text
-#         :param sent_id: The sentence id
-#         :param tok_id: The token id
-#         :param rel_id: The relation id (i.e. coreference chain)
-#         '''
-#
-#         self.text = t_text
-#         self.sent_id = t_sentenceindex
-#         self.tok_id = t_tokenindex
-#         self.rel_id = rel_id
-
 
 def read_selected_sentences(filename: str) -> dict:
     """
@@ -243,7 +230,7 @@ def save_gold_mention_statistics(train_extracted_mentions, dev_extracted_mention
 
 def read_ecb_plus_doc(selected_sent_list: List[int],
                       doc_name: str, doc_id: str,
-                      output_file_obj,
+                      extracted_tokens,
                       extracted_mentions: List,
                       parse_all: bool, load_singletons: bool):
 
@@ -324,7 +311,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         The xml file should be encoded with utf-8.
     :param doc_id: document ID of the xml file, in form of  {topic id}_{file name}{ecb/ecbplus type}).
         e.g. '1_10ecb'.
-    :param output_file_obj: In the 1st way, info is saved into a text file, and this parameter
+    :param extracted_tokens: In the 1st way, info is saved into a text file, and this parameter
         is the io stream object(the return of open() function) of this text file.
     :param extracted_mentions: Info is saved into this list in the 2th way. This list
         accumulates the extracted info from multiple calls to this function on every
@@ -344,66 +331,111 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
     tree = ET.parse(ecb_file)
     root = tree.getroot()
 
-    t_info: dict[str, dict] = {}
+    t_info: dict[str, dict[str, str]] = {}
     """
-    {tid: t_info_dict}
-        - tid: 't_id' attr of a token, all tokens(selected or not) are included.
-        - t_info_dict['t_text']: text of this token, e.g. 'has'
-        - t_info_dict['t_sentenceindex']:  'sentence' attr of this token, it is the index of 
-          this sentence start with 1st sentence in whole doc. e.g. "3"
-        - t_info_dict['t_bodysentenceindex']:  'sentence' attr of this token, it is the index of
-          this sentence start with 1st sentence in news body. e.g. "1"
-        - t_info_dict['t_tokenindex']: 'number' attr of this token, e.g. "0"
-        - t_info_dict['i_id']: id of the i that this t refer to.
+    {t_id: t_info_dict}
+        - t_id: id of a t, **All t(selected or not) are included.** The 1st t in whole
+          doc has a t_id = 1.
+        
+          - Value: 't_id' attr of this t label.
+          - Type: str 
+        
+        - t_info_dict['t_text']: text of this t.
+        
+          - Value: text of this t label, e.g. 'has'.
+          - Type: str.
+        
+        - t_info_dict['t_sentenceindex']:  index of this sentence, the 1st sentence in
+          whole doc is index 0. 
+          
+          - Value: 'sentence' attr of this t label, e.g. "3".
+          - Type: str.
+          
+        - t_info_dict['t_bodysentenceindex']:  index of this sentence, the 1st sentence in
+          news body is index 0. For detail about sentenceindex and bodysentenceindex, see
+          *sentencindex_to_bodysentenceindex*.
+          
+          - Value: calculated by *sentencindex_to_bodysentenceindex(sentencindex)*, e.g. "1"
+          - Type: str
+          
+        - t_info_dict['t_tokenindex']: index of this t, the 1st t in cur sentence is
+          index 0.
+          
+          - Value: 'number' attr of this t, e.g. "0".
+          - Type: str.
+        
+        - t_info_dict['i_id']: id of the corresponding i.
+        
           - wd_i_id( For detail, see wd_i_info.) for a wd i. 
           - cd_i_id( For detail, see cd_i_info.) for a cd i. 
           - sg_i_id( For detail, see sg_i_info.) for a sg i, if load singletons; 
             None, if not load singletons.
-        - i_desc: description of the i that this t refer to.
+            
+        - t_info_dict['i_desc']: description of the corresponding i.
+        
           - wd_i_desc for a wd i. For detail, see wd_i_info.
           - cd_i_desc for a cd i. For detail, see cd_i_info.
           - 'padding' for a sg i, if load singletons; None, if not load singleton.
+          
     """
 
     sm_info: dict[str, str] = {}
     """
     {sm_id: sm_tag}
-        - sm_id: 'm_id' attr of a sm. All(selected and not; sg, wd and cd) sm are included.
-        - sm_tag: tag of this sm.
+        - sm_id: id of a sm. 
+          **All(selected and not; sg, wd and cd) sm are included.**
+          
+          - Value: 'm_id' attr of this sm label.
+        
+        - sm_tag: 
+        
+          -Value: tag of this sm label.
     """
 
     tm_info: dict[str, tuple[str, str]] = {}
     """
-    {'tm_id':(tm_desc, tm_iid_or_tag)}
-        - tm_id: 'm_id' attr of a tm. All( selected and not) cd and wd tm are included.
-        - tm_desc: 'TAG_DESCRIPTOR' attr of the tm.          
-        - tm_iid_or_tag: 
+    {'tm_id':(tm_desc, i_id_or_tag)}
+        - tm_id: id of a tm. **All( selected and not) cd and wd tm are included.**
         
-          - for CD tm, it is the 'instance_id' attr of this tm.
-          - for WD tm, it is the tag of this tm
+          - Value: 'm_id' attr of this tm label. 
+          
+        - tm_desc: describe of this tm.
+        
+          - Value: 'TAG_DESCRIPTOR' attr of the tm label. 
+                   
+        - i_id_or_tag: info of the corresponding i:
+          for a cd tm, we have the i_id of the corresponding i; 
+          for a wd tm, we have the i_type of the corresponding i.
+        
+          - Value:
+          
+            - for CD tm, it is the 'instance_id' attr of this tm label.
+            - for WD tm, it is the tag of this tm label.
 
     """
 
     mapped_sm_id: [str] = []
     """
     [sm_id]
-        - sm_id: 'm_id' attr of sm which refer to a tm(seleted and not; CD and WD tm,
-          except SG tm).
+        - sm_id: id of a sm which refer to a tm. 
+          All(seleted and not; CD and WD sm, except SG sm) sm which refer to a tm are
+          included.
     """
 
     sm_id_to_t_id: dict[str, list[str]] = {}
     """
-    {sm_id:[t_id,t_id,...]}
-        - sm_id: 'm_id' attr of a sm，all sm included( selected and not; sg sm, wd sm and
-          cd sm).
-        - t_id: 't_id' attr of token of this sm.
+    {sm_id: sm_tidlist}
+        - sm_id: id of a sm. **All sm included( selected and not; sg sm, wd sm and
+          cd sm).**
+        - sm_tidlist:[t_id,t_id,...]. t_id is the id of all(in cur doc) the t that
+          refer to this sm.
     """
 
     sm_id_to_i_id: dict[str, str] = {}
     """
     {sm_id: i_id}
-        - sm_id: 'm_id' attr of a sm, all sm included( selected or not; cd sm, wd sm and 
-          sg sm).
+        - sm_id: id of a sm. **All sm included( selected or not; cd sm, wd sm and 
+          sg sm).**
         - i_id: 
         
           - a wd_i_id(for detail, see wd_i_info) for a wd i. 
@@ -413,8 +445,8 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
     wd_i_info: dict[str, tuple[list[str], str]] = {}
     """
-    {wd_i_id:(wd_i_tokenlist, wd_i_desc)}
-        - wd_i_id: represented in the form of 'INTRA_{wd_i_type}_rId_docId'.
+    {wd_i_id:(t_id_list, wd_i_desc)}
+        - wd_i_id: represented in the form of 'INTRA_{wd_i_type}_{rId}_{docId}'.
           
           - wd_i_type: A wd_i has many tm and sm, each of them has a type. wd_i_type
             equals to the type if all the types are same; otherwise, a accordance strategy
@@ -428,19 +460,19 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
           - rId: A wd_i has only one wd_r, rId is the 'r_id' attr of this wd_r
           - docId:
           
-        - wd_i_tokenlist:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to this wd_i.
+        - t_id_list:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to this wd_i.
         - wd_i_desc: description string of this wd_i.
           The value equals to 'TAG_DESCRIPTOR' attr of the tm of this wd_i.
     """
 
     cd_i_info: dict[str, tuple[list[str], str]] = {}
     """
-    {'cd_i_id': (cd_i_tokenlist, cd_i_desc)}
+    {'cd_i_id': (cd_i_tid, cd_i_desc)}
         - cd_i_id: if the 'instance_id ' attr of corresponding tm and the 'note'
           attr of the corresponding r is equal, cd_i_id is this value. otherwise, a 
           accordance strategy is need:
           
-        - cd_i_tokenlist:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to
+        - cd_i_tidlist:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to
           this cd_i.
         - cd_i_desc: description string of this cd_i.
           The value equals to 'TAG_DESCRIPTOR' attr of the tm of this cd_i.
@@ -448,8 +480,10 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
     sg_i_info: dict[str, tuple[list[str], str]] = {}
     """
-    there is sg_i only when load_singletons=True
-    {'sg_i_id': (g_i_tokenlist, sg_i_desc)}
+    **there is no sg_i in ecb+, only when load_singletons=True, we make a sg_i for every
+    sg sm.**
+    
+    {'sg_i_id': (t_id_list, sg_i_desc)}
         - sg_i_id: in the form of 'Singleton_{sg_i_type}_{sg_sm_id}_{doc_id}'
         
           - sg_i_type: equals to the type of sg_sm.( A sg_i has only one sg_sm, no 
@@ -458,19 +492,18 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
             needed)
           - doc_id:
 
-        - sg_i_tokenlist:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to
-          this sg_i. But it is None because we do not need this, the varable sg_i_tokenlist
+        - t_id_list:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to
+          this sg_i. But it is None because we do not need this, the varable sg_i_tidlist
           here is to keep the same structer as cd_i_info and wd_i_info.
-        - sg_i_desc: description string of this cd_i.But it is None because there is no
-          description for a sg i in ecb+, the varable sg_i_desc here is to keep the same
-          structer as cd_i_info and wd_i_info.
+        - sg_i_desc: description string of this cd_i.But it is always 'padding' because
+          there is no description for a sg i in ecb+.
     """
 
     # 1.extract info from <Markables>...</Markables> tag
     """
     iterate through every tag in <Markables>...</Markables>
     there are 4 kinds of conditions and 3 kinds of mention marked as (1),(2)source
-    mention,(3)CD target mention,(4)WD target mention
+    mention,(3)CD target mention,(4)WD target mention:    
         <Markables>
         (2) <XXX m_id="48" note="byCROMER" >
         (1)     <token_anchor t_id="19"/>
@@ -520,7 +553,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         </Relations>
     """
     cur_wd_i_id = ''
-    cur_wd_i_tokenlist= []
+    cur_wd_i_tidlist= []
     for cur_wd_r in root.find('Relations').findall('INTRA_DOC_COREF'):
         for child in cur_wd_r.iter():
             # for condition (i1), cur r is a WD r
@@ -548,14 +581,14 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
                 wd_i_info[cur_wd_i_id] = ()
             # for condition (i2), it is the sm in cur r
             elif child.tag == 'source':
-                cur_wd_i_tokenlist += (sm_id_to_t_id[child.attrib['m_id']])
+                cur_wd_i_tidlist += (sm_id_to_t_id[child.attrib['m_id']])
                 mapped_sm_id.append(child.attrib['m_id'])
                 sm_id_to_i_id[child.attrib['m_id']] = cur_wd_i_id
             # for condition (i3), it is the tm in cur r
             else:
-                wd_i_info[cur_wd_i_id] = (cur_wd_i_tokenlist, tm_info[child.attrib['m_id']][0])
+                wd_i_info[cur_wd_i_id] = (cur_wd_i_tidlist, tm_info[child.attrib['m_id']][0])
                 # end of iteration of cur relation, clear variable for iteration of the next relation.
-                cur_wd_i_tokenlist = []
+                cur_wd_i_tidlist = []
 
     # 3. extract info from <Relations><CROSS_DOC_COREF>...</CROSS_DOC_COREF></Relations>
     """
@@ -570,7 +603,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         </Relations>
     """
     cur_cd_i_id = ''
-    cur_cd_i_tokenlist = []
+    cur_cd_i_tidlist = []
     for cross_doc_coref in root.find('Relations').findall('CROSS_DOC_COREF'):
         for child in cross_doc_coref.iter():
             # for condition (c1), cur r is CD r
@@ -581,15 +614,15 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
                 cd_i_info[cur_cd_i_id] = ()
             # for condition (c2), it is the sm in cur r
             elif child.tag == 'source':
-                cur_cd_i_tokenlist += (sm_id_to_t_id[child.attrib['m_id']])
+                cur_cd_i_tidlist += (sm_id_to_t_id[child.attrib['m_id']])
                 mapped_sm_id.append(child.attrib['m_id'])
                 sm_id_to_i_id[child.attrib['m_id']] = cur_cd_i_id
             # for condition (c3), it is the tm in cur r
             else:
                 cd_i_info[cur_cd_i_id] = (
-                    cur_cd_i_tokenlist, tm_info[child.attrib['m_id']][0])
+                    cur_cd_i_tidlist, tm_info[child.attrib['m_id']][0])
                 # end of iteration of cur relation, clear variable for iteration of the next relation.
-                cur_cd_i_tokenlist = []
+                cur_cd_i_tidlist = []
 
     # 4. extract info from <token>...</token>
     for cur_t in root.findall('token'):
@@ -687,7 +720,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         )
 
         # (5
-        is_continuous = True if cur_sm_tokenindex == range(cur_sm_tokenindex[0], cur_sm_tokenindex[-1]+1) else False
+        is_continuous = True if cur_sm_tokenindex == list(range(cur_sm_tokenindex[0], cur_sm_tokenindex[-1]+1)) else False
 
         # (6
         is_singleton = True if 'Singleton' in cur_i_id else False
@@ -723,7 +756,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
         # write into output file: if go to next sentence, go to next line
         if prev_t_bodysentenceindex is None or prev_t_bodysentenceindex != cur_t_bodysentenceindex:
-            output_file_obj.write('\n')
+            extracted_tokens[0] += '\n'
             prev_t_bodysentenceindex = cur_t_bodysentenceindex
         # write into output file: token info
         s = doc_id \
@@ -732,23 +765,24 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
             + '\t' + cur_t_text \
             + '\t' + (cur_t_iid if cur_t_iid is not None else '-') \
             + '\n'
-        output_file_obj.write(s)
+        extracted_tokens[0] += s
 
 
 def obj_dict(obj):
     return obj.__dict__
 
 
-def save_split_mentions_to_json(split_name, mentions_list):
+def save_split_mentions_to_json(split_name: str, mentions_list: List[MentionData]):
     '''
     This function gets  a mentions list of a specific split and saves its mentions in a JSON files.
     Note that event and entity mentions are saved in separate files.
-    :param split_name: the split name
+    :param split_name: the split name, e.g. Train, Dev, Test
     :param mentions_list: the split's extracted mentions list
     '''
+
+    # 区分event mention和entity mention
     event_mentions = []
     entity_mentions = []
-
     for mention_obj in mentions_list:
         mention_type = mention_obj.mention_type
         if 'ACT' in mention_type or 'NEG' in mention_type:
@@ -756,62 +790,78 @@ def save_split_mentions_to_json(split_name, mentions_list):
         else:
             entity_mentions.append(mention_obj)
 
+    # 存储event mentions
     json_event_filename = os.path.join(args.output_dir, 'ECB_{}_Event_gold_mentions.json'.format(split_name))
-    json_entity_filename =  os.path.join(args.output_dir, 'ECB_{}_Entity_gold_mentions.json'.format(split_name))
+    with open(json_event_filename, 'w', encoding='utf-8') as f:
+        # event_mentions.sort(key=lambda x:x.sent_id*100+x.tokens_number[0])
+        json.dump(event_mentions, f, default=obj_dict,
+                  indent=4, sort_keys=True, ensure_ascii=False)
 
-    with open(json_event_filename, 'w') as f:
-        json.dump(event_mentions, f, default=obj_dict, indent=4, sort_keys=True)
+    # 存储entity mentions
+    json_entity_filename = os.path.join(args.output_dir, 'ECB_{}_Entity_gold_mentions.json'.format(split_name))
+    with open(json_entity_filename, 'w', encoding='utf-8') as f:
+        json.dump(entity_mentions, f, default=obj_dict,
+                  indent=4, sort_keys=True, ensure_ascii=False)
 
-    with open(json_entity_filename, 'w') as f:
-        json.dump(entity_mentions, f, default=obj_dict, indent=4, sort_keys=True)
 
-
-def parse_selected_sentences(xml_to_sent_dict: dict, parse_all: bool,
-                             load_singletons: bool, data_setup: int):
+def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
+                 load_singletons: bool, data_setup: int):
     """
-    xxx
+    read ecb+ corpora and extract info with given config.
 
-    :param xml_to_sent_dict: selected sentences dictionary. This parameter is effective if parse_all=False.
+    :param file_to_selected_sentence: This parameter is effective only when parse_all=False, and this
+        parameter shows which sentence in a xml file will be extracted.
+        e.g. {'1_10ecbplus.xml':[1,3],'1_11ecbplus.xml':[1]}
     :param parse_all: a boolean variable indicates whether to read all the ECB+ corpus as in
         Yang setup or whether to filter the sentences according to a selected sentences list
         as in Cybulska setup.
     :param load_singletons:  boolean variable indicates whether to read singleton mentions as in
         Cybulska setup or whether to ignore them as in Yang setup.
-    :param data_setup: the variable indicates the evaluation setup (which topics is for dev set
-        and which is for train set) - 1 for Yang and Choubey setup and 2 for Cybulska Kenyon-Dean setup (recommended).
+    :param data_setup: the variable indicates the evaluation setup (which topics is for dev
+        set and which is for train set)
+        - 1 for Yang and Choubey setup
+        - 2 for Cybulska Kenyon-Dean setup (recommended).
     """
+    # 1. topic_list
+    topic_list = os.listdir(args.ecb_path)  # ['1', '10', '11', ...]
+    topic_list = [int(d) for d in topic_list]  # [1, 10, 11, ...]
+
+    # 2. split train/dec/test topic
     if data_setup == 1:  # Yang setup
         train_topics = range(1, 23)
         dev_topics = range(23, 26)
+        test_topics = list(set(topic_list) - set(train_topics))
     else:  # Cybulska setup
         dev_topics = [2, 5, 12, 18, 21, 23, 34, 35]
         train_topics = [i for i in range(1, 36) if i not in dev_topics]  # train topics 1-35 , test topics 36-45
+        test_topics = list(set(topic_list) - set(train_topics) - set(dev_topics))
+    print('train_topics:', train_topics)
+    print('dev_topics:', dev_topics)
+    print('test_topics:', test_topics)
 
-    dirs = os.listdir(args.ecb_path)  # ['1', '10', '11', ...]
-    dirs_int = [int(d) for d in dirs]  # [1, 10, 11, ...]
-
-    # empty list
+    # 3. split train/dec/test file
     # classify all the ecb/ecb+ docs into train/dev/test set in sorted order.
-    train_ecb_files_sorted = []  # [([0, 3], 'data\\raw\\ECBplus\\1\\1_10ecb.xml', '1_10ecb'),...]
+    train_ecb_files_sorted = []
+    """
+    [([0, 3], 'data\\raw\\ECBplus\\1\\1_10ecb.xml', '1_10ecb'),...]
+    """
     dev_ecb_files_sorted = []
     test_ecb_files_sorted = []
     train_ecb_plus_files_sorted = []
     dev_ecb_plus_files_sorted = []
     test_ecb_plus_files_sorted = []
     # traverse the topics, and fill the above list
-    for topic in sorted(dirs_int):
-        # cur topic
-        cur_topic_id = str(topic)
-        # get paths of docs in cur topic
-        doc_files = os.listdir(os.path.join(args.ecb_path, cur_topic_id))
-        # classify the docs: ecb， ecb+
+    for topic in sorted(topic_list):
+        topic_id = str(topic)
+        topic_folder_path = os.listdir(os.path.join(args.ecb_path, topic_id))
+        # classify the files: ecb， ecb+
         ecb_files = []
         ecb_plus_files = []
-        for doc_file in doc_files:
-            if 'plus' in doc_file:
-                ecb_plus_files.append(doc_file)
+        for file_name in topic_folder_path:
+            if 'plus' in file_name:
+                ecb_plus_files.append(file_name)
             else:
-                ecb_files.append(doc_file)
+                ecb_files.append(file_name)
         # sort the docs
         ecb_files = sorted(ecb_files)
         ecb_plus_files = sorted(ecb_plus_files)
@@ -820,14 +870,14 @@ def parse_selected_sentences(xml_to_sent_dict: dict, parse_all: bool,
             # if user want to parse all sentences, then process cur doc
             # if user want to parse only the selected sentences, and cur doc includes at
             #   least 1 selected sentence, then process cur doc
-            if parse_all or (ecb_file in xml_to_sent_dict):
+            if parse_all or (ecb_file in file_to_selected_sentence):
                 # get the relative path of xml file of cur doc
-                xml_file_path = os.path.join(os.path.join(args.ecb_path, cur_topic_id), ecb_file)
+                xml_file_path = os.path.join(os.path.join(args.ecb_path, topic_id), ecb_file)
                 # get the selected sentence id in cur doc
                 if parse_all:
                     selected_sentences = None
                 else:
-                    selected_sentences = xml_to_sent_dict[ecb_file]
+                    selected_sentences = file_to_selected_sentence[ecb_file]
                 # classify cur doc into train/dev/test
                 if topic in train_topics:
                     train_ecb_files_sorted.append((selected_sentences, xml_file_path,
@@ -840,12 +890,12 @@ def parse_selected_sentences(xml_to_sent_dict: dict, parse_all: bool,
                                                   ecb_file.replace('.xml', '')))
         # traverse the ecb+ docs, add info to train/test/dev_ecb_plus_files_sorted list
         for ecb_file in ecb_plus_files:
-            if parse_all or ecb_file in xml_to_sent_dict:
-                xml_file_path = os.path.join(os.path.join(args.ecb_path,cur_topic_id),ecb_file)
+            if parse_all or ecb_file in file_to_selected_sentence:
+                xml_file_path = os.path.join(os.path.join(args.ecb_path,topic_id),ecb_file)
                 if parse_all:
                     selected_sentences = None
                 else:
-                    selected_sentences = xml_to_sent_dict[ecb_file]
+                    selected_sentences = file_to_selected_sentence[ecb_file]
                 if topic in train_topics:
                     train_ecb_plus_files_sorted.append((selected_sentences,
                                                         xml_file_path, ecb_file.replace('.xml', '')))
@@ -860,56 +910,78 @@ def parse_selected_sentences(xml_to_sent_dict: dict, parse_all: bool,
     test_files = test_ecb_files_sorted + test_ecb_plus_files_sorted
     dev_files = dev_ecb_files_sorted + dev_ecb_plus_files_sorted
 
-    # open file ECB_Dev/Train/Test_corpus.txt
-    dev_out = open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='UTF-8')
-    train_out = open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='UTF-8')
-    test_out = open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='UTF-8')
-    # empty list
+    # 4. extract train/dec/test mention/token info
     train_extracted_mentions = []
+    """
+    A sm **in train split** will be saved when the following statement is True::
+        parse_all or (sm_sentenceindex in selected_sent_list)
+        
+    sm info is saved as a src.mention_data.MentionData objects, which has the following property：
+    
+    - doc_id = doc_id
+    - cur_t_sentenceindex = cur_sm_bodysentenceindex
+    - tokens_numbers = cur_sm_tokenindex
+    - tokens_str = cur_sm_string
+    - coref_chain = cur_i_id
+    - mention_type = cur_sm_type,
+    - is_continuous = is_continuous
+    - is_singleton = is_singleton
+    - score = float(-1)
+    """
     dev_extracted_mentions = []
     test_extracted_mentions = []
-    # fill the above list, and write the above file.
+    train_extract_tokens = ['']
+    dev_extracted_tokens = ['']
+    test_extracted_tokens = ['']
+
+    # extract mention and token info.
     for doc in train_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], train_out, train_extracted_mentions, parse_all, load_singletons)
+        read_ecb_plus_doc(doc[0], doc[1], doc[2], train_extract_tokens, train_extracted_mentions, parse_all, load_singletons)
     for doc in dev_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], dev_out, dev_extracted_mentions, parse_all, load_singletons)
+        read_ecb_plus_doc(doc[0], doc[1], doc[2], dev_extracted_tokens, dev_extracted_mentions, parse_all, load_singletons)
     for doc in test_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], test_out, test_extracted_mentions, parse_all, load_singletons)
-    # close the above file
-    train_out.close()
-    dev_out.close()
-    test_out.close()
+        read_ecb_plus_doc(doc[0], doc[1], doc[2], test_extracted_tokens, test_extracted_mentions, parse_all, load_singletons)
 
-    save_gold_mention_statistics(train_extracted_mentions, dev_extracted_mentions,
-                                 test_extracted_mentions)
-
+    # token info will be saved into the following txt file. i.e. ECB_Dev/Train/Test_corpus.txt
+    with open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='UTF-8') as f:
+        f.write(train_extract_tokens[0])
+    with open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='UTF-8') as f:
+        f.write(dev_extracted_tokens[0])
+    with open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='UTF-8') as f:
+        f.write(test_extracted_tokens[0])
+    # mention info will be saved into json file.
     save_split_mentions_to_json('Train', train_extracted_mentions)
     save_split_mentions_to_json('Dev', dev_extracted_mentions)
     save_split_mentions_to_json('Test', test_extracted_mentions)
-
     all_mentions = train_extracted_mentions + dev_extracted_mentions + test_extracted_mentions
     save_split_mentions_to_json('All', all_mentions)
+
+    # statistic info will be saved
+    save_gold_mention_statistics(train_extracted_mentions, dev_extracted_mentions,
+                                 test_extracted_mentions)
 
 
 def main():
     """
-        This script processes the ECB+ XML files and saves for each data split (train/dev/test):
-        1) A json file contains its mention objects.
-        2) text file contains its sentences.
-        .
-        Runs data processing scripts to turn raw data from (../raw) into
-        intermediate data (mention objects and sentences' text) ready for feature extraction
-        (saved in ../intermid).
+    - This script read ECB+ XML files(./data/raw), extract 2 kind of file and save those
+      file into output path(./output):
+
+      - ECB_[Train/Dev/Test/All]_[Event_Entity]_gold_mention.json
+      - ECB_[Train/Dev/Test]_corpus.txt
+
+    - After running of this script, those output files should be moved to inermid path
+      (./data/intermid) manually to get ready for feature extraction( src/features/build_features.py).
     """
     logger.info('Read ECB+ files')
-    if args.data_setup == 1:  # Reads the full ECB+ corpus without singletons (Yang setup)
-        parse_selected_sentences(xml_to_sent_dict={}, parse_all=True, load_singletons=False, data_setup=1)
-    elif args.data_setup == 2:  # Reads the a reviewed subset of the ECB+ (Cybulska setup)
-        xml_to_sent_dict = read_selected_sentences(args.selected_sentences_file)
-        parse_selected_sentences(xml_to_sent_dict=xml_to_sent_dict,
-                                 parse_all=False,
-                                 load_singletons=True,
-                                 data_setup=2)
+    # Reads the full ECB+ corpus without singletons (Yang setup)
+    if args.data_setup == 1:
+        read_corpora(file_to_selected_sentence={},
+                     parse_all=True, load_singletons=False, data_setup=1)
+    # Reads the a reviewed subset of the ECB+ (Cybulska setup)
+    elif args.data_setup == 2:
+        file_to_selected_sentence = read_selected_sentences(args.selected_sentences_file)
+        read_corpora(file_to_selected_sentence=file_to_selected_sentence,
+                     parse_all=False, load_singletons=True, data_setup=2)
     logger.info('ECB+ Reading was done.')
 
 
