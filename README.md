@@ -77,7 +77,7 @@ Note - the script's configuration file (train_config.json) also requires:
 This repository provides pre-processed data for the ECB+ corpus (download from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
 In case you want to create the data from scratch, do the following steps:
 
-Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files).
+Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files. It is at `Pre-trained ELMo Models` chapter in that website).
 
 ### Loading the ECB+ corpus
 * Extract the gold mentions and documents from the ECB+ corpus:
