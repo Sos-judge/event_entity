@@ -4,5 +4,5 @@ __pycache__
 /data/processed
 /data/raw
 /models
-/output
+/output*
 /笔记
