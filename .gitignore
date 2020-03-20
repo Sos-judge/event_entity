@@ -3,6 +3,7 @@
 __pycache__
 /data/processed
 /data/raw
+/data/external/elmo
 /models
 /output*
 /笔记
