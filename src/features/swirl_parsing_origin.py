@@ -1,11 +1,11 @@
 import os
+import sys
+for pack in os.listdir("src"):
+    sys.path.append(os.path.join("src", pack))
 
-from src.shared.classes import Srl_info
-# import sys
-# for pack in os.listdir("src"):
-#     sys.path.append(os.path.join("src", pack))
-# sys.path.append("/src/shared/")
-# from classes import *
+sys.path.append("/src/shared/")
+
+from classes import *
 
 
 def parse_swirl_sent(sent_id, sent_tokens):
@@ -52,55 +52,52 @@ def parse_swirl_sent(sent_id, sent_tokens):
     return event_dict
 
 
-def parse_swirl_file(xml_file_name, srl_file_path, srl_data):
+def parse_swirl_file(fname, file_path,srl_data):
     '''
-    This function gets the path to a SwiRL output file,
-    extracts the predicates and their arguments for each sentence in this document
+    This function gets the path to the output files of SwiRL,
+    extracts the predicates and their arguments for each sentence in each document
     and returns a dictionary in the following structure:
-    dict[key1][key2][key3] contains a Srl_info object.
+    dict[key1][key2] = dict[key3].
+    dict[key3] contains a Srl_info object.
     key1 - document id
     key2 - sent id
     key3 - token id of an extracted event
-
-    :param xml_file_name: name of the input file of SwiRL, (name of the xml file in ecb+)
-    :param srl_file_path: path to the output file of SwiRL
-    :param srl_data: A dict that saves srl info of many files. The extracted srl
-     info of this file will be save into this dict also.
+    :param fname: SwiRL output file to parse
+    :param file_path: path to SwiRL folder
+    :param srl_data: the dictionary
+    :return: a dictionary as mentioned above
     '''
-    srl_file = open(srl_file_path, 'r')
-    xml_file_mainname = xml_file_name.split('.')[0]
-    srl_data[xml_file_mainname] = {}
+    swirl_file = open(file_path, 'r')
+    splitted_fname = fname.split('.')
+    srl_data[splitted_fname[0]] = {}
     sent_id = 0
     sent_tokens = []
-    for line in srl_file:
+    for line in swirl_file:
         temp_line = line.strip().split()
         if not temp_line:
-            srl_data[xml_file_mainname][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
+            srl_data[splitted_fname[0]][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
             sent_id += 1
             sent_tokens = []
         else:
             sent_tokens.append(temp_line)
     # parse the last sentence
-    srl_data[xml_file_mainname][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
-    srl_file.close()
+    srl_data[splitted_fname[0]][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
+    swirl_file.close()
 
 
-def parse_swirl_output(srl_folder_path):
+def parse_swirl_output(srl_files_path):
     '''
     This function gets the path to the output files of SwiRL and parse
     each output file
-
-    :param srl_folder_path: the path to the folder which includes the output files of SwiRL
+    :param srl_files_path: the path to the output files of SwiRL
     :return: a dictionary (see the previous function's documentation)
     '''
     srl_data = {}
-    srl_file_name_list = os.listdir(srl_folder_path)
-    for srl_file_name in srl_file_name_list:
-        srl_file_path = os.path.join(srl_folder_path, srl_file_name)
-        splitted = srl_file_name.split('.')  # 'SWIRL_OUTPUT.10_13ecbplus.xml.txt'
-        xml_file_name = splitted[1] + '.' + splitted[2]  # '10_13ecbplus.xml'
-
-        parse_swirl_file(xml_file_name, srl_file_path, srl_data)
+    for root, directory, files in os.walk(srl_files_path):
+        for f in files:
+            splitted = f.split('.')
+            fname = splitted[1] + '.' + splitted[2]
+            parse_swirl_file(fname, os.path.join(root, f),srl_data)
 
     return srl_data
 

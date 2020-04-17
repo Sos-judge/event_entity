@@ -2,16 +2,13 @@ import os
 import sys
 import spacy
 
-sys.path.append("/src/shared/")
-
-for pack in os.listdir("src"):
-    sys.path.append(os.path.join("src", pack))
-
-from classes import *
+# sys.path.append("/src/shared/")
+# for pack in os.listdir("src"):
+#     sys.path.append(os.path.join("src", pack))
+from src.shared.classes import Corpus, Topic, Document, Sentence, Token
 
 matched_args = 0
 matched_args_same_ix = 0
-
 matched_events = 0
 matched_events_same_ix = 0
 
@@ -40,14 +37,15 @@ def order_docs_by_topics(docs):
     return corpus
 
 
-def load_ECB_plus(processed_ecb_file):
+def load_ECB_plus(processed_ecb_file: str) -> dict:
     '''
     This function gets the intermediate data  (train/test/dev split after it was extracted
     from the XML files and stored as a text file) and load it into objects
     that represent a document structure
+
     :param processed_ecb_file: the filename of the intermediate representation of the split,
     which is stored as a text file
-    :return: dictionary of document objects, represents the documents in the split
+    :return: dictionary of document objects, represents the documents in the split.
     '''
     doc_changed = True
     sent_changed = True
@@ -59,8 +57,8 @@ def load_ECB_plus(processed_ecb_file):
         stripped_line = line.strip()
         try:
             if stripped_line:
-                doc_id,sent_id,token_num,word, coref_chain = stripped_line.split('\t')
-                doc_id = doc_id.replace('.xml','')
+                doc_id, sent_id, token_num, word, coref_chain = stripped_line.split('\t')
+                doc_id = doc_id.replace('.xml', '')
         except:
             row = stripped_line.split('\t')
             clean_row = []
@@ -91,7 +89,7 @@ def load_ECB_plus(processed_ecb_file):
             if sent_changed:
                 new_sent = Sentence(sent_id)
                 sent_changed = False
-                new_doc.add_sentence(sent_id,new_sent)
+                new_doc.add_sentence(sent_id, new_sent)
                 last_sent_id = sent_id
 
             new_tok = Token(token_num,word,'-')
