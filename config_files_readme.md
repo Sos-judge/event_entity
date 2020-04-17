@@ -19,6 +19,21 @@ and entity mentions (with predicate-argument structures extraction).
 * SwiRL system's output on the ECB+ corpus is provided with this repo (its directory should be assigned to the srl_output_path attribute).
 * ELMo's files (options_file, weight_file) can be downloaded from - *https://allennlp.org/elmo* (we used Original 5.5B model files).
 
+Most of the attributes are self-explained (e.g. batch_size and lr) , but there are few who need
+to be explained:
+* `use_dep` - Boole. whether use dependency parse,
+* `use_srl` - Boole. whether use srl,
+* `use_allen_srl` - Boole. This config is activated when use_srl = True. There are 2 kinds of srl can be
+  use, allen SRL(if True) or SwiRL SRL(if False).
+* `srl_output_path` - Str. This config is activated when use_srl = True. SRL is before this script,
+  and this parameter is the path to the output of SRL step.
+* `use_left_right_mentions` - ,
+* `relaxed_match_with_gold_mention` - ,
+* `load_predicted_mentions` - ,
+* `load_elmo` - ,
+* `options_file" - ,
+* `weight_file` -
+
 ## Configuration file for training (train_config.json):
 
 Used with the script src/all_models/train_model.py.
