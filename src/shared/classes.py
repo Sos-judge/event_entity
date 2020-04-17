@@ -9,6 +9,16 @@ class Corpus(object):
     def __init__(self):
         self.topics = {}
 
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
+
     def add_topic(self,topic_id, topic):
         '''
         Gets a topic id and a topic object and add it to the topics dictionary
@@ -30,6 +40,16 @@ class Topic(object):
 
         self.event_mentions = []
         self.entity_mentions = []
+
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
 
     def add_doc(self, doc_id, doc):
         '''
@@ -54,6 +74,16 @@ class Document(object):
         '''
         self.doc_id = doc_name
         self.sentences = {}
+
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
 
     def get_sentences(self):
         '''
@@ -139,6 +169,16 @@ class Sentence(object):
         self.pred_event_mentions = []  # predicted event mentions
         self.pred_entity_mentions = []  # predicted entity mentions
 
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
+
     def add_token(self, token):
         '''
         This function gets a token object and append it to the token objects list
@@ -178,6 +218,7 @@ class Sentence(object):
         '''
         This function gets a mention object and adds it to the gold event mentions list if the
         flag is_event = True. Otherwise the mention object will be added to the gold entity mentions list
+
         :param mention: a mention object
         :param is_event: a flag that indicates whether the mention is an event mention or an
          entity mention
@@ -384,6 +425,16 @@ class Mention(object):
 
         self.head_elmo_embeddings = None
 
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
+
     def get_tokens(self):
         '''
         Returns the mention's tokens
@@ -441,6 +492,16 @@ class EventMention(Mention):
         self.amtmp = None
         self.amloc = None
 
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
+
     def __str__(self):
         a0 = self.arg0[0] if self.arg0 is not None else '-'
         a1 = self.arg1[0] if self.arg1 is not None else '-'
@@ -478,6 +539,16 @@ class EntityMention(Mention):
                                             is_continuous, coref_chain)
         self.predicates = {}  # a dictionary contains the entity mention's predicates, key is a predicate's mention id and value is the argument name
         self.mention_type = mention_type
+
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
 
     def add_predicate(self, predicate_id, relation_to_predicate):
         '''
@@ -525,6 +596,16 @@ class Token(object):
         self.gold_event_coref_chain = []
         self.gold_entity_coref_chain = []
 
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
+
     def get_token(self):
         '''
         A getter for the token's string
@@ -538,17 +619,21 @@ class Srl_info(object):
     An helper class that contains the extracted SRL data for each predicate
     '''
     def __init__(self, sent_id, arg_info, tok_id, predicate):
-        '''
-
-        :param sent_id:
-        :param arg_info:
-        :param tok_id:
-        :param predicate:
-        '''
         self.sent_id = sent_id
-        self.arg_info = arg_info # a dictionary contains the predicate's arguments, key is an argument name and value is a list argument tokens
         self.tok_id = tok_id
         self.predicate = predicate
+        self.arg_info = arg_info
+        # a dictionary contains the predicate's arguments, key is an argument name and value is a list argument tokens
+
+    def __eq__(self, other):
+        for key in self.__dict__.keys():
+            if self.__dict__[key] == other.__dict__[key]:
+                pass
+            else:
+                print(key)
+                return False
+        return True
+        # return self.__dict__ == other.__dict__
 
     def get_arg_info(self):
         '''
@@ -575,6 +660,16 @@ class Cluster(object):
         self.arg1_vec = None
         self.loc_vec = None
         self.time_vec = None
+
+    # def __eq__(self, other):
+    #     for key in self.__dict__.keys():
+    #         if self.__dict__[key] == other.__dict__[key]:
+    #             pass
+    #         else:
+    #             print(key)
+    #             return False
+    #     return True
+    #     # return self.__dict__ == other.__dict__
 
     def __repr__(self):
         mentions_strings = []
