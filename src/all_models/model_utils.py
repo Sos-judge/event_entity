@@ -113,10 +113,11 @@ def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
 def topic_to_mention_list(topic: Topic, is_gold: bool) -> tuple:
     '''
     抽取topic中的gold mention或predicted mention(取决于is_gold参数),并组成列表返回。
+
     :param topic: a Topic object
     :param is_gold: a flag that denotes whether to extract gold mention or predicted mentions
     :return: (gold event mention list, gold entity mention list)或(predicted event mention list, predicted
-    entity mention list)
+     entity mention list)
     '''
     event_mentions = []
     entity_mentions = []
@@ -251,6 +252,21 @@ def init_entity_wd_clusters(entity_mentions, doc_to_entity_mentions):
     return all_entity_clusters
 
 
+mention_list_to_external_wd_cluster_dict = init_entity_wd_clusters
+
+
+def mention_list_to_external_wd_cluster_list(mention_list: list, external_wd_coref_info,
+                                             is_event: bool) -> list:
+    if is_event is True:
+        print("mention_list_to_external_wd_cluster_list 暂不支持is_event为True")
+        return []
+    mention_dict = mention_list_to_external_wd_cluster_dict(mention_list, external_wd_coref_info)
+    cluster_list = []
+    for doc_id, clusters in mention_dict.items():
+        cluster_list.extend(clusters)
+    return cluster_list
+
+
 def have_string_match(mention, pred_str, pred_start, pred_end):
     '''
     Checks whether a mention has a match (strict or relaxed) with a predicted mention.
@@ -274,43 +290,50 @@ def have_string_match(mention, pred_str, pred_start, pred_end):
     return False
 
 
-def init_wd(mentions, is_event):
-    '''
-    Initialize a set of Mention objects (either EventMention or EntityMention) to a set of
-    within-document singleton clusters (a cluster which contains a single mentions), ordered by the mention's
-     document ID.
-    :param mentions:  a set of Mention objects (either EventMention or EntityMention)
+def init_wd(mention_list, is_event):
+    """Mention list -> Cluster dict (singleton cluster)
+
+    * mention_list = [Mention, ...]
+    * cluster_dict[doc id] = [Cluster, ...] (this Cluster is singleton cluster)
+
+    :param mention_list:  a set of Mention objects (either EventMention or EntityMention)
     :param is_event: whether the mentions are event or entity mentions.
     :return: a dictionary contains initial singleton clusters, ordered by the mention's
      document ID.
-    '''
-    wd_clusters = {}
-    for mention in mentions:
+    """
+    cluster_dict = {}
+    for mention in mention_list:
         mention_doc_id = mention.doc_id
-        if mention_doc_id not in wd_clusters:
-            wd_clusters[mention_doc_id] = []
+        if mention_doc_id not in cluster_dict:
+            cluster_dict[mention_doc_id] = []
         cluster = Cluster(is_event=is_event)
         cluster.mentions[mention.mention_id] = mention
-        wd_clusters[mention_doc_id].append(cluster)
+        cluster_dict[mention_doc_id].append(cluster)
+    return cluster_dict
 
-    return wd_clusters
+
+mention_list_to_singleton_cluster_dict = init_wd
 
 
-def init_cd(mentions, is_event):
-    '''
-    Initialize a set of Mention objects (either EventMention or EntityMention) to a set of
-    cross-document singleton clusters (a cluster which contains a single mentions).
-    :param mentions:  a set of Mention objects (either EventMention or EntityMention)
+def init_cd(mention_list, is_event):
+    """Mention list -> Cluster list (singleton cluster)
+
+    * mention_list = [Mention, ...]
+    * cluster_list = [Cluster, ...] (this Cluster is singleton cluster)
+
+    :param mention_list:  Mention list (either event or entity mention)
     :param is_event: whether the mentions are event or entity mentions.
-    :return: a list contains initial cross-document singleton clusters.
-    '''
-    clusters = []
-    for mention in mentions:
+    :return: Cluster list (singleton clusters).
+    """
+    cluster_list = []
+    for mention in mention_list:
         cluster = Cluster(is_event=is_event)
         cluster.mentions[mention.mention_id] = mention
-        clusters.append(cluster)
+        cluster_list.append(cluster)
+    return cluster_list
 
-    return clusters
+
+mention_list_to_singleton_cluster_list = init_cd
 
 
 def load_embeddings(embed_path, vocab_path):
@@ -580,7 +603,7 @@ def loadGloVe(glove_filename):
     '''
     vocab = []
     embd = []
-    file = open(glove_filename,'r')
+    file = open(glove_filename,'r', encoding='utf-8')  # 原：没有encoding='utf-8'
     for line in file.readlines():
         row = line.strip().split(' ')
         if len(row) > 1:
@@ -672,12 +695,15 @@ def load_check_point(fname):
 
 
 def create_gold_clusters(mentions):
-    '''
-    Forms within document gold clusters.
-    :param mentions: list of mentions
-    :return: a dictionary contains the within document gold clusters (list)
-    mapped by document id and the gold cluster ID.
-    '''
+    """Mention list -> Mention dict (by doc and gold WD mention cluster)
+
+    Given a mention objs list, the mention obj has gold WD coref info(WD mention cluster info),
+    this function rearrange those mention objs as a dict based on the gold WD coref info, such as
+    wd_clusters[doc_id][instance_id(cluster_id)]=[a list of mention obj that in the same WD mention cluster].
+
+    :param mentions: mention obj list
+    :return: mention obj dict that is arranged by doc and gold WD mention cluster.
+    """
     wd_clusters = {}
     for mention in mentions:
         mention_doc_id = mention.doc_id
@@ -691,28 +717,52 @@ def create_gold_clusters(mentions):
     return wd_clusters
 
 
-def create_gold_wd_clusters_organized_by_doc(mentions, is_event):
-    '''
-    Use the within document gold clusters (represented by lists of mention objects)
-    to form Cluster objects.
-    :param mentions: list of mentions
-    :param is_event: Clusters' type (event/entity)
-    :return: a dictionary contains gold within-document Cluster objects mapped by their document
-    '''
-    wd_clusters = create_gold_clusters(mentions)
-    clusters_by_doc = {}
+def create_gold_wd_clusters_organized_by_doc(mention_list, is_event):
+    """Mention list -> Cluster dict(by doc and gold WD coref cluster)
 
-    for doc_id, gold_chain_in_doc in wd_clusters.items():
+    example::
+        Mention list = [Mention, ...] (Mention has doc and gold WD coref info)
+        Cluster list[doc id] = [Cluster, ...] (this Cluster is gold WD coref cluster)
+
+    :param mention_list: Mentions list (event or entity mention).
+    :param is_event: event mention of entity mention
+    :return: Cluster dict.
+    """
+
+    # Mention list -> Mention dict
+    """
+    mention_list = [Mention, ...]  
+    mention_dict[doc id][cluster id] = [Mention, ...]. (this Cluster is gold WD coref cluster)
+    """
+    mention_dict = create_gold_clusters(mention_list)
+
+    # Mention dict -> Cluster dict
+    """
+    mention_dict[doc id][cluster id] = [Mention, ...]. (this Cluster is gold WD coref cluster)
+    cluster_dict[doc id] = [Cluster, ...]. (this Cluster is gold WD coref cluster)
+    """
+    cluster_dict = {}
+    for doc_id, gold_chain_in_doc in mention_dict.items():
         for gold_chain_id, gold_chain in gold_chain_in_doc.items():
             cluster = Cluster(is_event)
             for mention in gold_chain:
                 cluster.mentions[mention.mention_id] = mention
-            if doc_id not in clusters_by_doc:
-                clusters_by_doc[doc_id] = []
-            clusters_by_doc[doc_id].append(cluster)
+            if doc_id not in cluster_dict:
+                cluster_dict[doc_id] = []
+            cluster_dict[doc_id].append(cluster)
 
-    return clusters_by_doc
+    return cluster_dict
 
+
+mention_list_to_gold_wd_cluster_dict = create_gold_wd_clusters_organized_by_doc
+
+
+def mention_list_to_gold_wd_cluster_list(mention_list, is_event):
+    mention_dict = mention_list_to_gold_wd_cluster_dict(mention_list, is_event)
+    cluster_list = []
+    for doc_id, clusters in mention_dict.items():
+        cluster_list.extend(clusters)
+    return cluster_list
 
 def write_event_coref_results(corpus, out_dir, config_dict):
     '''
@@ -838,6 +888,7 @@ def create_entity_cluster_bow_lexical_vec(entity_cluster, model, device, use_cha
 def find_mention_cluster_vec(mention_id, clusters):
     '''
     Fetches a semantically-dependent vector of a mention's cluster
+
     :param mention_id: mention ID (string)
     :param clusters: list of Cluster objects
     :return: semantically-dependent vector of a mention's cluster - Pytorch tensor with
@@ -852,6 +903,7 @@ def create_event_cluster_bow_arg_vec(event_cluster, entity_clusters, model, devi
     '''
     Creates the semantically-dependent vectors (of all roles) for all mentions
     in a specific event cluster.
+
     :param event_cluster: a Cluster object which contains EventMention objects.
     :param entity_clusters: current predicted entity clusters (a list)
     :param model: CDCorefScorer object
@@ -867,7 +919,7 @@ def create_event_cluster_bow_arg_vec(event_cluster, entity_clusters, model, devi
         event_mention.loc_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
                                   requires_grad=False).to(device).view(1, -1)
         if event_mention.arg0 is not None:
-            arg_vec = find_mention_cluster_vec(event_mention.arg0[1],entity_clusters)
+            arg_vec = find_mention_cluster_vec(event_mention.arg0[1], entity_clusters)
             event_mention.arg0_vec = arg_vec.to(device)
         if event_mention.arg1 is not None:
             arg_vec = find_mention_cluster_vec(event_mention.arg1[1], entity_clusters)
@@ -882,8 +934,12 @@ def create_event_cluster_bow_arg_vec(event_cluster, entity_clusters, model, devi
 
 def create_entity_cluster_bow_predicate_vec(entity_cluster, event_clusters, model, device):
     '''
+    更新实体簇中每个实体指称的的dependency vector。
+    即entity_mention.arg0_vec/arg1_vec/time_vec/loc_vec
+
     Creates the semantically-dependent vectors (of all roles) for all mentions
     in a specific event cluster.
+
     :param entity_cluster: a Cluster object which contains EntityMention objects.
     :param event_clusters: current predicted entity clusters (a list)
     :param model: CDCorefScorer object
@@ -918,14 +974,16 @@ def update_lexical_vectors(clusters, model, device ,is_event, requires_grad):
     '''
     Updates for each cluster its average vector of all mentions' span representations
     (Used to form the semantically-dependent vectors)
+
     :param clusters: list of Cluster objects (event/entity clsuters)
     :param model: CDCorefScorer object, should be an event model if clusters are event clusters
-    (and the same with entities)
+     (and the same with entities)
     :param device: Pytorch device
     :param is_event: True if clusters are event clusters and false otherwise (clusters are entity
-    clusters)
+     clusters)
     :param requires_grad: True if tensors require gradients (for training time) , and
-    False for inference time.
+     False for inference time.
+    :return: no return, but set cluster.lex_vec
     '''
     for cluster in clusters:
         if is_event:
@@ -942,7 +1000,11 @@ def update_lexical_vectors(clusters, model, device ,is_event, requires_grad):
 
 def update_args_feature_vectors(clusters, other_clusters ,model ,device, is_event):
     '''
+    输入一组实体(事件)簇，根据当前事件(实体)簇更新实体(事件)簇中每一个实体(事件)指称的dependency
+    vector。
+
      Updates for each mention in clusters its semantically-dependent vectors
+
     :param clusters: current event/entity clusters (list of Cluster objects)
     :param other_clusters: should be the current event clusters if clusters = entity clusters
     and vice versa.
@@ -953,17 +1015,21 @@ def update_args_feature_vectors(clusters, other_clusters ,model ,device, is_even
     for cluster in clusters:
         if is_event:
             # Use an average of span representations to represent arguments/predicates clusters.
+            # 更新每个事件指称的dependency vector
             create_event_cluster_bow_arg_vec(cluster, other_clusters, model, device)
         else:
+            # 更新每个实体指称的dependency vector
             create_entity_cluster_bow_predicate_vec(cluster, other_clusters, model, device)
 
 
 def generate_cluster_pairs(clusters, is_train):
     '''
-    Given list of clusters, this function generates candidate cluster pairs (for training/inference).
-    The function under-samples cluster pairs without any coreference links
-     when generating cluster pairs for training and the current number of clusters in the
-    current topic is larger than 300.
+
+    Given list of clusters, this function generates candidate cluster pairs (for training/
+    inference). The function under-samples cluster pairs without any coreference links when
+    generating cluster pairs for training and the current number of clusters in the current topic is
+    larger than 300.
+
     :param clusters: current clusters
     :param is_train: True if the function generates candidate cluster pairs for training time
     and False, for inference time (without under-sampling)
@@ -998,8 +1064,7 @@ def generate_cluster_pairs(clusters, is_train):
             if cluster_1 != cluster_2:
                 if is_train:
                     q = calc_q(cluster_1, cluster_2)
-                    if (cluster_1, cluster_2, q) \
-                            not in pairs and (cluster_2, cluster_1, q) not in pairs:
+                    if (cluster_1, cluster_2, q) not in pairs and (cluster_2, cluster_1, q) not in pairs:
                         add_to_training = False if use_under_sampling else True
                         if q > 0:
                             add_to_training = True
@@ -1011,8 +1076,7 @@ def generate_cluster_pairs(clusters, is_train):
                             pairs.append((cluster_1, cluster_2, q))
                         test_pairs.append((cluster_1, cluster_2))
                 else:
-                    if (cluster_1, cluster_2) not in pairs and \
-                            (cluster_2, cluster_1) not in pairs:
+                    if (cluster_1, cluster_2) not in pairs and (cluster_2, cluster_1) not in pairs:
                         pairs.append((cluster_1, cluster_2))
 
     print('Number of generated cluster pairs = {}'.format(len(pairs)))
@@ -1024,6 +1088,7 @@ def generate_cluster_pairs(clusters, is_train):
 def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
     '''
     Creates for a mention its context and span text vectors and concatenates them.
+
     :param mention: an Mention object (either an EventMention or an EntityMention)
     :param device: Pytorch device
     :param model: CDCorefScorer object, should be in the same type as the mention
@@ -1047,7 +1112,11 @@ def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
                           if not is_stop(token)]
 
         for mention_word_tensor in mention_embeds:
-            mention_bow += mention_word_tensor
+            mention_bow = mention_bow + mention_word_tensor
+            """
+            改bug，mention_bow += mention_word_tensor，改成上边那样。
+            问题所在：mention_bow初始没问题，但循环中的+=是inplace操作，所以_version非0，产生了问题
+            """
         char_embeds = get_char_embed(mention.mention_str, model, device)
 
         if len(mention_embeds) > 0:
@@ -1117,7 +1186,7 @@ def mention_pair_to_model_input(pair, model, device, topic_docs, is_event, requi
     mention_2 = pair[1]
 
     # create span representation
-    if requires_grad :
+    if requires_grad:
         mention_1.span_rep = get_mention_span_rep(mention_1, device, model, topic_docs,
                                                   is_event, requires_grad)
         mention_2.span_rep = get_mention_span_rep(mention_2, device, model, topic_docs,
@@ -1134,6 +1203,8 @@ def mention_pair_to_model_input(pair, model, device, topic_docs, is_event, requi
     else:
         mention_1_tensor = span_rep_1
         mention_2_tensor = span_rep_2
+
+    # mention_1_tensor 有问题
 
     if model.use_mult and model.use_diff:
         mention_pair_tensor = torch.cat([mention_1_tensor, mention_2_tensor,
@@ -1166,6 +1237,7 @@ def train_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_
     '''
     Creates input tensors (mention pair representations) to all mention pairs in the batch
     (for training time).
+
     :param batch_pairs: a list of mention pairs (in the size of the batch)
     :param model: CDCorefScorer object (should be in the same type as batch_pairs
      - event or entity Model)
@@ -1190,6 +1262,7 @@ def train_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_
                                                           use_args_feats=use_args_feats,
                                                           use_binary_feats=use_binary_feats,
                                                           other_clusters=other_clusters)
+        # mention_pair_tensor有问题
         if not mention_pair_tensor.requires_grad:
             logging.info('mention_pair_tensor does not require grad ! (warning)')
 
@@ -1210,6 +1283,7 @@ def train(cluster_pairs, model, optimizer, loss_function, device, topic_docs, ep
     '''
     Trains a model using a given set of cluster pairs, a specific optimizer and a loss function.
     The model is trained on all mention pairs between each cluster pair.
+
     :param cluster_pairs: list of clusters pairs
     :param model: CDCorefModel object
     :param optimizer: Pytorch optimizer
@@ -1243,7 +1317,7 @@ def train(cluster_pairs, model, optimizer, loss_function, device, topic_docs, ep
             samples_count += batch_size
             batches_count += 1
             batch_tensor, q_tensor = train_pairs_batch_to_model_input(batch_pairs, model,
-                                                                device, topic_docs, is_event,
+                                                                      device, topic_docs, is_event,
                                                                       config_dict["use_args_feats"],
                                                                       config_dict["use_binary_feats"],
                                                                       other_clusters)

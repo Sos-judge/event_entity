@@ -1,9 +1,10 @@
-from models import *
-from model_utils import *
 import torch.nn as nn
 import torch.optim as optim
 import logging
+import numpy as np
 
+from src.all_models.models import CDCorefScorer
+from src.all_models.model_utils import loadGloVe,load_embeddings, load_one_hot_char_embeddings
 
 word_embeds = None
 word_to_ix = None
@@ -15,7 +16,6 @@ All functions in this script requires a configuration dictionary which contains 
 other attributes for configuring the experiments.
 In this project, the configuration dictionaries are stored as JSON files (e.g. train_config.json)
 and are loaded before the training/inference starts.
-
 '''
 
 
@@ -23,7 +23,11 @@ def factory_load_embeddings(config_dict):
     '''
     Given a configuration dictionary, containing the paths to the embeddings files,
     this function loads the initial character embeddings and pre-trained word embeddings.
+    and save it into global variables: ord_embeds, word_to_ix, char_embeds, char_to_ix
+
     :param config_dict: s configuration dictionary
+    :return: no return, but set global variables: ord_embeds, word_to_ix, char_embeds,
+     char_to_ix
     '''
     global word_embeds, word_to_ix, char_embeds, char_to_ix
     word_embeds, word_to_ix, char_embeds, char_to_ix = load_model_embeddings(config_dict)
@@ -34,7 +38,7 @@ def create_model(config_dict):
     Given a configuration dictionary, containing flags for configuring the current experiment,
     this function creates a model according to those flags and returns that model.
     :param config_dict: a configuration dictionary
-    :return: an initialized model - CDCorefScorer object
+    :return: an initialized model - src.all_models.CDCorefScorer object
     '''
     global word_embeds, word_to_ix, char_embeds, char_to_ix
 
@@ -70,6 +74,7 @@ def create_optimizer(config_dict, model):
     '''
     Given a configuration dictionary, containing the string attribute "optimizer" that determines
     in which optimizer to use during the training.
+
     :param config_dict: a configuration dictionary
     :param model: an initialized CDCorefScorer object
     :return: Pytorch optimizer
@@ -110,18 +115,34 @@ def create_loss(config_dict):
     return loss_function
 
 
-def load_model_embeddings(config_dict):
+def load_model_embeddings(config_dict: dict) -> tuple:
     '''
-    Given a configuration dictionary, containing the paths to the embeddings files,
-    this function loads the initial character embeddings and pre-trained word embeddings.
+    Given a configuration dictionary like::
+
+        {
+            "glove_path":,
+            "use_pretrained_char":,
+            "char_pretrained_path":,
+            "char_vocab_path":
+        }
+
+    * this function loads pre-trained word embeddings based on config_dict["glove_path"],
+      and save the word embeddings into global variable **word_embeds**, **word_to_ix**.
+
+    * If config_dict["use_pretrained_char"] is True, this function loads the initial
+      character embeddings based on config_dict["char_pretrained_path"] and
+      config_dict["char_vocab_path"], and save the character embeddings into global varable
+      **char_embeds**, **char_to_ix**.
+
     :param config_dict: s configuration dictionary
+    :returns: global variables: word_embeds, word_to_ix, char_embeds, char_to_ix.
+     word_embeds and char_embeds is a ndarray. word_to_ix and char_to_ix is dict.
+
     '''
     logging.info('Loading word embeddings...')
-
     # load pre-trained word embeddings
     vocab, embd = loadGloVe(config_dict["glove_path"])
     word_embeds = np.asarray(embd, dtype=np.float64)
-
     i = 0
     word_to_ix = {}
     for word in vocab:
@@ -129,26 +150,21 @@ def load_model_embeddings(config_dict):
             continue
         word_to_ix[word] = i
         i += 1
-
     logging.info('Word embeddings have been loaded.')
 
     if config_dict["use_pretrained_char"]:
         logging.info('Loading pre-trained char embeddings...')
         char_embeds, vocab = load_embeddings(config_dict["char_pretrained_path"],
                                              config_dict["char_vocab_path"])
-
         char_to_ix = {}
         for char in vocab:
             char_to_ix[char] = len(char_to_ix)
-
         char_to_ix[' '] = len(char_to_ix)
         space_vec = np.zeros((1, char_embeds.shape[1]))
         char_embeds = np.append(char_embeds, space_vec, axis=0)
-
         char_to_ix['<UNK>'] = len(char_to_ix)
         unk_vec = np.random.rand(1, char_embeds.shape[1])
         char_embeds = np.append(char_embeds, unk_vec, axis=0)
-
         logging.info('Char embeddings have been loaded.')
     else:
         logging.info('Loading one-hot char embeddings...')
