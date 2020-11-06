@@ -78,7 +78,7 @@ Add your project root path as PYTHONPATH.
     * Alternatively, you can create the data from scratch by following the instructions below.
 * 下载。Download GloVe embeddings from *https://nlp.stanford.edu/projects/glove/* (we used glove.6B.300d).
 * 配置文件。Configure paths in the configuration file train_config.json (see details at config_files_readme.md).
-* 其他数据。the script's configuration file (train_config.json) also requires: 
+* the script's configuration file (train_config.json) also requires: 
    * An output file of a within-document entity coreference system on the ECB+ corpus (provided in this repo at             data/external/stanford_neural_wd_entity_coref_out)
 * Run the script train_model.py 
     * Run with the command:
