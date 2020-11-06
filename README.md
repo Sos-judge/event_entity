@@ -31,7 +31,7 @@ The model was trained and evaluated on the ECB+ corpus.
 ## installation
 把项目路径添加到python导包目录。方法很多。例如：
 我的项目在E:\ProgramCode\Barhom2019
-我在anaconda安装目录下添加.pth文件，写入：E:\ProgramCode
+那么我在anaconda安装目录D:\ProgramFiles\Anaconda3下新建mypath.pth文件，写入：E:\ProgramCode\Barhom2019。保存。
 然后打开python，import Barhom2019，成功导入，不报错即可。
 
 ## Testing Instructions

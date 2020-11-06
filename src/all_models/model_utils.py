@@ -8,19 +8,20 @@ import itertools
 import collections
 import numpy as np
 from scorer import *
-from eval_utils import *
+from src.shared.eval_utils import *
 import _pickle as cPickle
-from bcubed_scorer import *
-import matplotlib.pyplot as plt
+from src.all_models.bcubed_scorer import *
+from src.shared.classes import *
+
+# import matplotlib.pyplot as plt
 # import spacy
 # from spacy.lang.en import English
 
-for pack in os.listdir("src"):
-    sys.path.append(os.path.join("src", pack))
+# for pack in os.listdir("src"):
+#     sys.path.append(os.path.join("src", pack))
+#
+# sys.path.append("/src/shared/")
 
-sys.path.append("/src/shared/")
-
-from classes import *
 
 clusters_count = 1
 
@@ -651,8 +652,11 @@ def load_check_point(fname):
     :param fname: model's filename
     :return:Pytorch model
     '''
-    return torch.load(fname)
-    return torch.load(fname, map_location=torch.device('cpu'))
+    from src.config import config_dict
+    if config_dict["use_cuda"]:
+        return torch.load(fname)
+    else:
+        return torch.load(fname, map_location=torch.device('cpu'))
 
 
 def create_gold_clusters(mentions):

@@ -1,63 +1,63 @@
 import os
 import sys
 import json
-import random
 import subprocess
-import numpy as np
-import _pickle as cPickle  # python3之后，cPickle包改名成了_pickle
-import logging
-import argparse
 import torch
+from src.config import config_dict
 
 print("环境变量：", os.environ["PATH"], "\n")
 
-# 把"工作路径/src"下的文件都加入搜索路径
-for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
-    # 把每个文件加入到包的搜索路径
-    sys.path.append(os.path.join("src", pack))
+# # 把"工作路径/src"下的文件都加入搜索路径
+# for pack in os.listdir("src"):  # 遍历"工作路径/src"下的文件
+#     # 把每个文件加入到包的搜索路径
+#     sys.path.append(os.path.join("src", pack))
 
 # 配置参数：命令行参数解器
+import argparse
 parser = argparse.ArgumentParser(description='Testing the regressors')
 parser.add_argument('--config_path', type=str, help=' The path configuration json file')
 parser.add_argument('--out_dir', type=str, help=' The directory to the output folder')
-# 进行参数解析，结果存入配置参数列表
-args = parser.parse_args()
+
+# 全局配置
+if 1:
+    # config in command
+    args = parser.parse_args()
+    config_dict["config_path"] = args.config_path
+    config_dict["out_dir"] = args.out_dir
+    # config in config file(test_config.json)
+    with open(config_dict["config_path"], 'r') as js_file:
+        config_file = json.load(js_file)
+        print(config_file)
+        config_dict.update(config_file)
+    # config "use_cuda": want to use and is able to use cuda
+    if 1:
+        if config_dict["gpu_num"] != -1:  # gpu_num为-1表示不想使用cuda
+            # 新增环境变量
+            os.environ["CUDA_VISIBLE_DEVICES"]= str(config_dict["gpu_num"])
+            # 新增配置参数
+            use_cuda = True
+        else:  # gpu_num为其他表示想使用cuda
+            use_cuda = False
+        # 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
+        config_dict["use_cuda"] = use_cuda and torch.cuda.is_available()
+        if config_dict["use_cuda"]:
+            print('使用cuda，cuda版本：')
+            os.system("nvcc --version")
+        else:
+            print("不使用cuda")
 
 # 根据out_dir参数，创建输出路径（如果不存在）
-if not os.path.exists(args.out_dir):
-    os.makedirs(args.out_dir)
-
-# 根据config_path参数，读取配置文件(test_config.json)
-with open(args.config_path, 'r') as js_file:
-    config_dict = json.load(js_file)
-    print(config_dict)
-
+if not os.path.exists(config_dict["out_dir"]):
+    os.makedirs(config_dict["out_dir"])
 # 把当前配置文件序列化为json保存在输出路径(test_config.json)
-with open(os.path.join(args.out_dir,'test_config.json'), "w") as js_file:
-    json.dump(config_dict, js_file, indent=4, sort_keys=True)
-
-# 配置参数：是否使用cuda
-if config_dict["gpu_num"] != -1:  # gpu_num为-1表示不想使用cuda
-    # 新增环境变量
-    os.environ["CUDA_VISIBLE_DEVICES"]= str(config_dict["gpu_num"])
-    # 新增配置参数
-    use_cuda = True
-else:  # gpu_num为其他表示想使用cuda
-    use_cuda = False
-# 只有当配置文件中要求使用cuda，且cuda确实可用时，才使用cuda
-use_cuda = use_cuda and torch.cuda.is_available()
-if use_cuda:
-    print('使用cuda，cuda版本：')
-    os.system("nvcc --version")
-else:
-    print("不使用cuda")
-
+with open(os.path.join(config_dict["out_dir"],'test_config.json'), "w") as js_file:
+    json.dump(config_file, js_file, indent=4, sort_keys=True)
 # 配置random
+import random
 random.seed(config_dict["random_seed"])
-
 # 配置numpy
+import numpy as np
 np.random.seed(config_dict["random_seed"])
-
 # 配置pytorch
 torch.manual_seed(config_dict["seed"])
 if use_cuda:
@@ -65,21 +65,22 @@ if use_cuda:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+# 下边是自己写的包
+# 这个classes类定义了corpus、topic、document等基本类，而测试集是以corpus类对象的形式存储的
+from src.shared.classes import *  # from classes import *
+from src.shared.eval_utils import *  # from eval_utils import *
+from src.all_models.model_utils import load_entity_wd_clusters, test_models
+
 # 创建logger
+import logging
 logging.basicConfig(
     # 使用fileHandler,日志文件在输出路径中(test_log.txt)
-    filename=os.path.join(args.out_dir, "test_log.txt"),
+    filename=os.path.join(config_dict["out_dir"], "test_log.txt"),
     filemode="w",
     # 配置日志级别
     level=logging.INFO
 )
 
-# 下边是自己写的包
-# 这些包得放在logger之后，因为他们用到了logger
-# 这个classes类定义了corpus、topic、document等基本类，而测试集是以corpus类对象的形式存储的
-from src.shared.classes import *  # from classes import *
-from src.shared.eval_utils import *  # from eval_utils import *
-import src.all_models.model_utils as model_utils  # from model_utils import *
 
 
 def read_conll_f1(filename):
@@ -151,13 +152,13 @@ def test_model(test_set):
     :param test_set: 测试数据
     '''
     # 加载设备
-    if use_cuda:
+    if config_dict["use_cuda"]:
         cudan = "cuda:"+config_dict["gpu_num"]
         device = torch.device(cudan)
     else:
         device = torch.device("cpu")
     # 加载模型
-    if use_cuda:  # 训练模型时使用的是0号GPU，现在使用n号GPU，需要转换
+    if config_dict["use_cuda"]:  # 训练模型时使用的是0号GPU，现在使用n号GPU，需要转换
         cd_event_model = torch.load(config_dict["cd_event_model_path"], map_location={'cuda:0': cudan})
         cd_entity_model = torch.load(config_dict["cd_entity_model_path"], map_location={'cuda:0': cudan})
     else:  # 训练模型时使用的是0号GPU，现在使用CPU，需要转换
@@ -168,10 +169,10 @@ def test_model(test_set):
     cd_entity_model.to(device)
 
     # 加载外部wd ec结果
-    doc_to_entity_mentions = model_utils.load_entity_wd_clusters(config_dict)
+    doc_to_entity_mentions = load_entity_wd_clusters(config_dict)
 
     # 算法主体(数据，模型)
-    _,_ = model_utils.test_models(test_set, cd_event_model, cd_entity_model,
+    _,_ = test_models(test_set, cd_event_model, cd_entity_model,
                                   device, config_dict, write_clusters=True,
                                   out_dir=args.out_dir,
                                   doc_to_entity_mentions=doc_to_entity_mentions,
@@ -186,17 +187,16 @@ def main():
     '''
 
     # 读入测试数据
-    print('Loading test data...')
     logging.info('Loading test data...')
     # 根据配置文件加载测试集
+    import _pickle as cPickle  # python3之后，cPickle包改名成了_pickle
     with open(config_dict["test_path"], 'rb') as f:  # test_path是测试数据路径
         test_data = cPickle.load(f)
         '''
-        测试集test_data是一个自定义类Corpus的实例化对象，Corpus类在sr/shared/classes.py中定义
+        测试集test_data是一个自定义类Corpus的实例化对象，Corpus类在src/shared/classes.py中定义
           Corpus包含Topic；Topic包含Document(以及E和V指称)；Document包含Sentence
           Sentence包含Token(以及真实的和预测的E和V指称)；...
         '''
-    print('Test data have been loaded.')
     logging.info('Test data have been loaded.')
 
     # 运行算法进行测试
