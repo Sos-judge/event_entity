@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import spacy
 import torch
 import random
 import logging
@@ -13,7 +12,8 @@ from eval_utils import *
 import _pickle as cPickle
 from bcubed_scorer import *
 import matplotlib.pyplot as plt
-from spacy.lang.en import English
+# import spacy
+# from spacy.lang.en import English
 
 for pack in os.listdir("src"):
     sys.path.append(os.path.join("src", pack))
@@ -652,6 +652,7 @@ def load_check_point(fname):
     :return:Pytorch model
     '''
     return torch.load(fname)
+    return torch.load(fname, map_location=torch.device('cpu'))
 
 
 def create_gold_clusters(mentions):

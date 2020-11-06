@@ -26,29 +26,46 @@ The model was trained and evaluated on the ECB+ corpus.
 * [seaborn](https://seaborn.pydata.org/) 0.9.0
 * [AllenNLP](https://allennlp.org/) 0.5.1
 * [perl](https://www.perl.org/get.html) 这玩意不是python包，是一个命令行工具。点击进入官网下载安装包并安装。
+你需要新建一个python虚拟环境，然后安装上述包。
+
+## installation
+把项目路径添加到python导包目录。方法很多。例如：
+我的项目在E:\ProgramCode\Barhom2019
+我在anaconda安装目录下添加.pth文件，写入：E:\ProgramCode
+然后打开python，import Barhom2019，成功导入，不报错即可。
 
 ## Testing Instructions
-* Download pretrained event and entity models and pre-processed data for the ECB+ corpus at *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*  这玩意在谷歌网盘上，你要直接下能卡死。使用多网盘同步工具MultClude把谷歌网盘上的文件转到OneDrive上，在从OneDrive上下载。参见 https://blog.csdn.net/zhmxubing/article/details/88681573.
-    * Configure the model and test set paths in the configuration file test_config.json accordingly.  你看他的配置，就知道他本来怎么布置的，按照他原来的结构布置你下载的数据和模型即可。我没改动，怕踩坑。
-* Run the script predict_model.py with the command:
-    `python src/all_models/predict_model.py --config_path test_config.json --out_dir <output_directory>`
-    如果你使用默认配置，那就是:
-    `python src/all_models/predict_model.py --config_path test_config.json --out_dir output`
-
-Where:
-* `config_path` - a path to a JSON file holds the test configuration (test_config.json).
-     An explanation about this configuration file is provided in config_files_readme.md.
-* `out_dir` - an output directory.
-
-Main output:
-* Two response (aka system prediction) files:
-   * `CD_test_entity_mention_based.response_conll` - cross-document entity coreference results in CoNLL format.
-   * `CD_test_event_mention_based.response_conll` - cross-document event coreference results in CoNLL format.
-* `conll_f1_scores.txt` - A text file contains the CoNLL coreference scorer's output (F1 score).
-
-Note - the script's configuration file (test_config.json) also requires: 
-   * An output file of a within-document entity coreference system on the ECB+ corpus (provided in this repo at data/external/stanford_neural_wd_entity_coref_out/ecb_wd_coref.json)
-   * An output file of the document clustering algorithm that has been used in the paper (provided in this repo at data/external/document_clustering/predicted_topics)
+* Download pretrained event and entity models and pre-processed data for the ECB+ corpus
+  at *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*  .
+  这玩意在谷歌网盘上，你要直接下能卡死。使用多网盘同步工具MultClude把谷歌网盘上的文件转到OneDrive上，在从OneDrive上下载。
+  参见 https://blog.csdn.net/zhmxubing/article/details/88681573.
+* Configure the model and test set paths in the configuration file test_config.json accordingly. 
+  你看他的配置，就知道他本来怎么布置上一步下载的数据和模型的，按照他原来的结构布置你下载的数据和模型即可。我没改动，怕踩坑。
+* Run the script predict_model.py
+    * run with the command:
+        `python src/all_models/predict_model.py --config_path test_config.json --out_dir <output_directory>`
+        * 参数解释:
+            * `config_path` - a path to a JSON file holds the test configuration (test_config.json).
+            An explanation about this configuration file is provided in config_files_readme.md.
+            * `out_dir` - the output directory.
+        * 如果你使用默认配置，那就是:
+        `python src/all_models/predict_model.py --config_path test_config.json --out_dir output`
+    * run in PyCharm
+        * 在File - Settings - Project - Project interpreter中添加你的虚拟环境。
+        * 在Run - Edit Configuration中点“+”，选python，则会新建一个运行配置，修改配置：
+            * Script path: <项目根目录>\src\all_models\predict_model.py
+            * Parameters: --config_path test_config.json --out_dir output
+            * Environment variables: PYTHONUNBUFFERED=1
+            * Python interpreter: 选你刚添加的虚拟环境
+            * Work directory: <项目根目录>
+    * Main output:
+        * Two response (aka system prediction) files:
+           * `CD_test_entity_mention_based.response_conll` - cross-document entity coreference results in CoNLL format.
+           * `CD_test_event_mention_based.response_conll` - cross-document event coreference results in CoNLL format.
+        * `conll_f1_scores.txt` - A text file contains the CoNLL coreference scorer's output (F1 score).
+    * Note - the script's configuration file (test_config.json) also requires: 
+       * An output file of a within-document entity coreference system on the ECB+ corpus (provided in this repo at data/external/stanford_neural_wd_entity_coref_out/ecb_wd_coref.json)
+       * An output file of the document clustering algorithm that has been used in the paper (provided in this repo at data/external/document_clustering/predicted_topics)
 
 ## Training Instructions
 * Download the pre-processed data for the ECB+ corpus at *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*.
@@ -77,43 +94,38 @@ Note - the script's configuration file (train_config.json) also requires:
 This repository provides pre-processed data for the ECB+ corpus (download from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
 In case you want to create the data from scratch, do the following steps:
 
-Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files).
-
-### Loading the ECB+ corpus
-Extract the gold mentions and documents from the ECB+ corpus:
-   `python src/data/make_dataset.py --ecb_path <ecb_path> --output_dir <output_directory> --data_setup 2 --selected_sentences_file       data/raw/ECBplus_coreference_sentences.csv`
-
-Where:
-   * `ecb_path` - a directory contains the ECB+ documents (can be downloaded from *http://www.newsreader-project.eu/results/data/the-ecb-corpus/*).
-   * `output_dir` - output directory.
-   * `data_setup` - enter '2' to load the ECB+ data in the same evaluation setup as used in our experiments (see the setup description in the paper).
-   * `selected_sentences_file` - path to a CSV file contains the selected sentences.
-
-Output:
-The script saves for each data split (train/dev/test):
-* A json file contains its mention objects.
-* A text file contains its sentences.
-
-
-### Feature extraction
-Run the feature extraction script, which extracts predicate-argument structures,
-mention head and ELMo embeddings, for each mention in each split (train/dev/test):
-   `python src/features/build_features.py --config_path build_features_config.json --output_path <output_path>`
-
-Where:
-   * `config_path` - a path to a JSON file holds the feature extraction configuration (build_features_config.json).
-                  An explanation about this configuration file is provided in config_files_readme.md.
-   * `output_path` - a path to the output directory.
-
-Output:
-This script saves 3 pickle files, each contains a Corpus object representing each split:
-* `train_data` - the training data, used as an input to the script train_model.py.
-* `dev_data` - the dev data, used as an input to the script train_model.py.
-* `test_data` - the test data, used as an input to the script predict_model.py.
-
-Note - the script's configuration file also requires:
-   * The output files of the script `make_dataset.py` (JSON and text files).
-   * Output files of SwiRL SRL system on the ECB+ corpus (provided in this repo at data/external/swirl_output).
+* Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files).
+* Loading the ECB+ corpus, and extract the gold mentions and documents from the ECB+ corpus:
+    * run with the command:
+       `python src/data/make_dataset.py --ecb_path <ecb_path> --output_dir <output_directory> --data_setup 2 --selected_sentences_file       data/raw/ECBplus_coreference_sentences.csv`
+        * 参数解释
+           * `ecb_path` - a directory contains the ECB+ documents (can be downloaded from *http://www.newsreader-project.eu/results/data/the-ecb-corpus/*).
+           * `output_dir` - output directory.
+           * `data_setup` - enter '2' to load the ECB+ data in the same evaluation setup as used in our experiments (see the setup description in the paper).
+           * `selected_sentences_file` - path to a CSV file contains the selected sentences.
+    * run in PyCharm
+    * Main Output: 
+        The script saves for each data split (train/dev/test):
+        * A json file contains its mention objects.
+        * A text file contains its sentences.
+* Feature extraction. 
+    Run the feature extraction script, which extracts predicate-argument structures, mention head and ELMo embeddings,
+    for each mention in each split (train/dev/test):
+    * run with command:
+        `python src/features/build_features.py --config_path build_features_config.json --output_path <output_path>`
+        * 参数解释:
+            * `config_path` - a path to a JSON file holds the feature extraction configuration (build_features_config.json).
+                          An explanation about this configuration file is provided in config_files_readme.md.
+            * `output_path` - a path to the output directory.
+    * run in PyCharm
+    * Output: 
+        This script saves 3 pickle files, each contains a Corpus object representing each split:
+        * `train_data` - the training data, used as an input to the script train_model.py.
+        * `dev_data` - the dev data, used as an input to the script train_model.py.
+        * `test_data` - the test data, used as an input to the script predict_model.py.
+    * Note - the script's configuration file also requires:
+       * The output files of the script `make_dataset.py` (JSON and text files).
+       * Output files of SwiRL SRL system on the ECB+ corpus (provided in this repo at data/external/swirl_output).
 
 
 ## Contact info
