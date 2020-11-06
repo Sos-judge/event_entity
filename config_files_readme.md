@@ -19,6 +19,21 @@ and entity mentions (with predicate-argument structures extraction).
 * SwiRL system's output on the ECB+ corpus is provided with this repo (its directory should be assigned to the srl_output_path attribute).
 * ELMo's files (options_file, weight_file) can be downloaded from - *https://allennlp.org/elmo* (we used Original 5.5B model files).
 
+Most of the attributes are self-explained (e.g. batch_size and lr) , but there are few who need
+to be explained:
+* `use_dep` - Boole. whether use dependency parse,
+* `use_srl` - Boole. whether use srl,
+* `use_allen_srl` - Boole. This config is activated when use_srl = True. There are 2 kinds of srl can be
+  use, allen SRL(if True) or SwiRL SRL(if False).
+* `srl_output_path` - Str. This config is activated when use_srl = True. SRL is before this script,
+  and this parameter is the path to the output of SRL step.
+* `use_left_right_mentions` - ,
+* `relaxed_match_with_gold_mention` - ,
+* `load_predicted_mentions` - ,
+* `load_elmo` - ,
+* `options_file" - ,
+* `weight_file` -
+
 ## Configuration file for training (train_config.json):
 
 Used with the script src/all_models/train_model.py.
@@ -59,8 +74,8 @@ The main attributes of this configuration files are:
 * `wd_entity_coref_file` - a path to a file (provided) which contains the predictions of a WD entity coreference system on the ECB+. We use CoreNLP for that purpose.
 * `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
 * `merge_iters` - 迭代次数，for i in range(1,config_dict["merge_iters"]+1)
-* `load_predicted_topics` - ?
-* `predicted_topics_path` - path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
+* `load_predicted_topics` - false:使用ecb本来的topic true:使用文档聚类算法预测的topic
+* `predicted_topics_path` - 如果上边那个选的true，那么这个就是存储“文档聚类算法预测的topic”的文件的路径。path to a pickle file which contains the predicted topics, provided in this repo at data/external/document_clustering or can be obtained using the code in the folder src/doc_clustering.
 * `seed` - torch.manual_seed(config_dict["seed"])和torch.cuda.manual_seed(config_dict["seed"])
 * `random_seed` - random.seed(config_dict["random_seed"])和np.random.seed(config_dict["random_seed"])
 * `event_gold_file_path` - path to the key (gold) event coreference file (for running the evaluation with the CoNLL scorer), provided in this repo.
