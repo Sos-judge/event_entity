@@ -10,7 +10,7 @@
     "epochs": 50,
     "event_merge_threshold": 0.5,
     "feature_size": 50,
-    "glove_path": "/home/nlp/barhoms/joint_coref/resources/glove.6B.300d.txt",
+    "glove_path": "data/external/char_embed/glove.6B.300d.txt",
     "gpu_num": 0,
 
     "load_predicted_topics": false,

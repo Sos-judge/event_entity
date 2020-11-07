@@ -2,5 +2,9 @@
 .vscode
 __pycache__
 /data/processed
+/data/raw
+/data/external/elmo
+/data/external/char_embed
 /models
-/output
+/output*
+/笔记

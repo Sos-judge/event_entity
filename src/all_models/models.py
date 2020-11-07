@@ -1,9 +1,9 @@
-import math
+# import math
 import torch
 import torch.nn as nn
-from model_utils import *
 import torch.nn.functional as F
-import torch.autograd as autograd
+# import torch.autograd as autograd
+# import src.all_models.model_utils
 
 
 class CDCorefScorer(nn.Module):
@@ -11,8 +11,10 @@ class CDCorefScorer(nn.Module):
     An abstract class represents a coreference pairwise scorer.
     Inherits Pytorch's Module class.
     '''
-    def __init__(self, word_embeds, word_to_ix,vocab_size, char_embedding, char_to_ix, char_rep_size
-                 , dims, use_mult, use_diff, feature_size):
+    def __init__(
+        self, word_embeds, word_to_ix, vocab_size, char_embedding, char_to_ix, char_rep_size,
+        dims, use_mult, use_diff, feature_size
+    ):
         '''
         C'tor for CorefScorer object
         :param word_embeds: pre-trained word embeddings
@@ -36,7 +38,7 @@ class CDCorefScorer(nn.Module):
         self.embed = nn.Embedding(vocab_size, word_embeds.shape[1])
 
         self.embed.weight.data.copy_(torch.from_numpy(word_embeds))
-        self.embed.weight.requires_grad = False # pre-trained word embeddings are fixed
+        self.embed.weight.requires_grad = False  # pre-trained word embeddings are fixed
         self.word_to_ix = word_to_ix
 
         self.char_embeddings = nn.Embedding(len(char_to_ix.keys()), char_embedding.shape[1])
@@ -46,11 +48,11 @@ class CDCorefScorer(nn.Module):
         self.embedding_dim = word_embeds.shape[1]
         self.char_hidden_dim = char_rep_size
 
-        self.char_lstm = nn.LSTM(input_size=char_embedding.shape[1],hidden_size= self.char_hidden_dim,num_layers=1,
+        self.char_lstm = nn.LSTM(input_size=char_embedding.shape[1], hidden_size=self.char_hidden_dim, num_layers=1,
                                  bidirectional=False)
 
         # binary features for coreferring arguments/predicates
-        self.coref_role_embeds = nn.Embedding(2,feature_size)
+        self.coref_role_embeds = nn.Embedding(2, feature_size)
 
         self.use_mult = use_mult
         self.use_diff = use_diff
@@ -86,8 +88,8 @@ class CDCorefScorer(nn.Module):
         :param device: gpu/cpu Pytorch device
         :return: initialized hidden states (tensors)
         '''
-        return (torch.randn((1, 1, self.char_hidden_dim ), requires_grad=True).to(device),
-                torch.randn((1, 1, self.char_hidden_dim ), requires_grad=True).to(device))
+        return (torch.randn((1, 1, self.char_hidden_dim), requires_grad=True).to(device),
+                torch.randn((1, 1, self.char_hidden_dim), requires_grad=True).to(device))
 
     def get_char_embeds(self, seq, device):
         '''
@@ -123,10 +125,6 @@ class CDCorefScorer(nn.Module):
                 else:
                     idxs.append(self.char_to_ix['<UNK>'])
                     print('can find char {}'.format(w))
-        tensor = torch.tensor(idxs,dtype=torch.long).to(device)
+        tensor = torch.tensor(idxs, dtype=torch.long).to(device)
 
         return tensor
-
-
-
-

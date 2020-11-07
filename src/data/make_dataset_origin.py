@@ -1,15 +1,24 @@
 # -*- coding: utf-8 -*-
+# this .py file should be run with parameter:
+#   --ecb_path data\raw\ECBplus
+#   --output_dir output
+#   --data_setup 2
+#   --selected_sentences_file data\raw\ECBplus_coreference_sentences.csv
+
+# third part package
 import os
 import csv
 import json
-import _pickle as cPickle
+import _pickle as cPickle  # import _pickle as cPickle
 import logging
 import argparse
-from mention_data import MentionData
 import xml.etree.ElementTree as ET
 
-parser = argparse.ArgumentParser(description='Parsing ECB+ corpus')
+# local package
+from src.data.mention_data import MentionData
 
+# 读取指令参数
+parser = argparse.ArgumentParser(description='Parsing ECB+ corpus')
 parser.add_argument('--ecb_path', type=str,
                     help=' The path to the ECB+ corpus')
 parser.add_argument('--output_dir', type=str,
@@ -21,6 +30,7 @@ parser.add_argument('--selected_sentences_file', type=str,
                          'the second evaluation setup (Cybulska setup)')
 args = parser.parse_args()
 
+# 建立输出路径
 out_dir = args.output_dir
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
@@ -31,6 +41,7 @@ class Token(object):
     '''
     def __init__(self, text, sent_id, tok_id, rel_id=None):
         '''
+
         :param text: The token text
         :param sent_id: The sentence id
         :param tok_id: The token id
@@ -54,11 +65,12 @@ def read_selected_sentences(filename):
     list contains all the sentences IDs that were selected from that XML filename.
     '''
     xml_to_sent_dict = {}
-    with open(filename, 'rt') as csv_file:  # 原'rb'
+    with open(filename, 'rt') as csv_file:
         reader = csv.reader(csv_file, delimiter=',')
-        next(reader)  # 原：reader.next()
+        # reader.next()
+        next(reader)
         for line in reader:
-            xml_filename = '{}_{}.xml'.format(line[0],line[1])
+            xml_filename = '{}_{}.xml'.format(line[0], line[1])
             sent_id = int(line[2])
 
             if xml_filename not in xml_to_sent_dict:
@@ -214,7 +226,7 @@ def read_ecb_plus_doc(selected_sent_list, doc_filename, doc_id, file_obj,extract
     :param load_singletons:  a boolean variable indicates whether to read singleton mentions as in
     Cybulska setup or whether to ignore them as in Yang setup.
     '''
-    ecb_file = open(doc_filename, 'r', encoding='UTF-8')  # 原：没有encoding='UTF-8'
+    ecb_file = open(doc_filename, 'r', encoding='utf-8')
     tree = ET.parse(ecb_file)
     root = tree.getroot()
 
@@ -338,9 +350,9 @@ def read_ecb_plus_doc(selected_sent_list, doc_filename, doc_id, file_obj,extract
 
             if int(token.tok_id) not in token_numbers:
                 token_numbers.append(int(token.tok_id))
-                tokens_str.append(token.text)  # 原：token.text.encode('ascii', 'ignore')
+                tokens_str.append(token.text)  # .encode('ascii', 'ignore')修改了这里
 
-        is_continuous = True if token_numbers == list(range(token_numbers[0], token_numbers[-1]+1)) else False  # 原：没有list()
+        is_continuous = True if token_numbers == range(token_numbers[0], token_numbers[-1]+1) else False
         is_singleton = True if 'Singleton' in coref_chain else False
         if parse_all or sent_id in selected_sent_list:
             if 'plus' in doc_id:
@@ -351,7 +363,7 @@ def read_ecb_plus_doc(selected_sent_list, doc_filename, doc_id, file_obj,extract
                     sent_id -= 1
 
             mention_obj = MentionData(doc_id, sent_id, token_numbers, ' '.join(tokens_str),
-                                       coref_chain, mention_type,is_continuous=is_continuous,
+                                       coref_chain, mention_type, is_continuous=is_continuous,
                                        is_singleton=is_singleton, score=float(-1))
             extracted_mentions.append(mention_obj)
     prev_sent_id = None
@@ -376,7 +388,7 @@ def read_ecb_plus_doc(selected_sent_list, doc_filename, doc_id, file_obj,extract
         if prev_sent_id is None or prev_sent_id != sent_id:
             file_obj.write('\n')
             prev_sent_id = sent_id
-        text = token.text  # 原：token.text.encode('ascii', 'ignore')
+        text = token.text  # .encode('ascii', 'ignore')  修改了这里
 
         if text == '' or text == '\t':
             text = '-'
@@ -412,17 +424,16 @@ def save_split_mentions_to_json(split_name, mentions_list):
     json_event_filename = os.path.join(args.output_dir, 'ECB_{}_Event_gold_mentions.json'.format(split_name))
     json_entity_filename =  os.path.join(args.output_dir, 'ECB_{}_Entity_gold_mentions.json'.format(split_name))
 
-    with open(json_event_filename, 'w', encoding='utf-8') as f:  # 原：没有encoding='utf-8'
-        json.dump(event_mentions, f, default=obj_dict, indent=4, sort_keys=True,
-                  ensure_ascii=False)  # 原： 没有ensure_ascii=False，没有这个的话，python中的某些符号就会以/u的形式出现在.json文件中
+    with open(json_event_filename, 'w') as f:
+        json.dump(event_mentions, f, default=obj_dict, indent=4, sort_keys=True)
 
-    with open(json_entity_filename, 'w', encoding='utf-8') as f:  # 原：没有encoding='utf-8'
-        json.dump(entity_mentions, f, default=obj_dict, indent=4, sort_keys=True,
-                  ensure_ascii=False)  # 原： 没有ensure_ascii=False
+    with open(json_entity_filename, 'w') as f:
+        json.dump(entity_mentions, f, default=obj_dict, indent=4, sort_keys=True)
 
 
 def parse_selected_sentences(xml_to_sent_dict, parse_all, load_singletons,data_setup):
     '''
+
     :param xml_to_sent_dict: selected sentences dictionary
     :param parse_all: a boolean variable indicates whether to read all the ECB+ corpus as in
     Yang setup or whether to filter the sentences according to a selected sentences list
@@ -439,9 +450,9 @@ def parse_selected_sentences(xml_to_sent_dict, parse_all, load_singletons,data_s
         dev_topics = [2, 5, 12, 18, 21, 23, 34, 35]
         train_topics = [i for i in range(1,36) if i not in dev_topics]  # train topics 1-35 , test topics 36-45
 
-    dev_out = open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='UTF-8')
-    train_out = open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='UTF-8')
-    test_out = open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='UTF-8')
+    dev_out = open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='utf-8')
+    train_out = open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='utf-8')
+    test_out = open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='utf-8')
 
     dirs = os.listdir(args.ecb_path)
     dirs_int = [int(dir) for dir in dirs]
