@@ -1145,7 +1145,7 @@ def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
 
 def create_mention_span_representations(
         mentions: list,
-        model: src.all_models.models.CDCorefScorer,
+        model: "src.all_models.models.CDCorefScorer",
         device: torch.device,
         topic_docs: dict,
         is_event: bool,
@@ -1652,10 +1652,11 @@ def test_model(clusters, other_clusters, model, device, topic_docs, is_event, ep
           topics_counter, topics_num, threshold, is_event, use_args_feats,
           use_binary_feats)
 
+from src.all_models.models import CDCorefScorer
 def test_models(
     test_set: Corpus,
-    cd_event_model: src.all_models.models.CDCorefScorer,
-    cd_entity_model: src.all_models.models.CDCorefScorer,
+    cd_event_model: CDCorefScorer,
+    cd_entity_model: CDCorefScorer,
     device: torch.device,
     config_dict: dict, write_clusters: bool, out_dir: str,
     doc_to_entity_mentions: dict,

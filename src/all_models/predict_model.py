@@ -34,7 +34,7 @@ sys.path.append(projectRootPath)
 sys.path.append(os.path.abspath(os.path.join(projectRootPath, "shared")))
 from classes import *
 
-# 配置参数：命令行参数解器
+# 设置命令行参数
 import argparse
 parser = argparse.ArgumentParser(description='Testing the regressors')
 parser.add_argument('--config_path', type=str, help=' The path configuration json file')

@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+这是在原来make_dataset.py的基础上的最小修改版本，仅为debug，使能跑通。
+修改包括：
+1. 修复bug，使其能跑通；
+2. 因为bug涉及编码，所以输出和原始版本略有不同，其不同只体现在特殊字符上。
+"""
 # this .py file should be run with parameter:
 #   --ecb_path data\raw\ECBplus
 #   --output_dir output

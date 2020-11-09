@@ -1,27 +1,23 @@
 # -*- coding: utf-8 -*-
-# this .py file should be run with parameter:
-#   --ecb_path data\raw\ECBplus
-#   --output_dir output
-#   --data_setup 2
-#   --selected_sentences_file data\raw\ECBplus_coreference_sentences.csv
-
+"""
+这是在make_dataset_origin.py的基础上的修改版本。
+修改包括：
+1. 变量名的修改；
+2. 函数接口的修改；
+3. 添加大量注释；
+4. 导包方式的优化。
+"""
 # third part package
-import os
-import csv
 import json
-import _pickle as cPickle  # import _pickle as cPickle
-import logging
-import argparse
-import xml.etree.ElementTree as ET  # for the parse of xml file.
-# import Lib.traceback as traceback  # for try and catch
-import sys
 import os
-from typing import Dict, List, Tuple  # for type hinting
+from typing import Dict, List, Tuple, Union  # for type hinting
+from src.config import config_dict
 
 # local package
 from src.data.mention_data import MentionData
 
-# 读取指令参数
+# 设置命令行参数
+import argparse
 parser = argparse.ArgumentParser(description='Parsing ECB+ corpus')
 parser.add_argument('--ecb_path', type=str,
                     help=' The path to the ECB+ corpus')
@@ -32,33 +28,42 @@ parser.add_argument('--data_setup', type=int,
 parser.add_argument('--selected_sentences_file', type=str,
                     help=' The path to a file contains selected sentences from the ECB+ corpus (relevant only for '
                          'the second evaluation setup (Cybulska setup)')
+
+# config in command
 args = parser.parse_args()
-
+config_dict["ecb_path"] = args.ecb_path
+config_dict["output_dir"] = args.output_dir
+config_dict["data_setup"] = args.data_setup
+config_dict["selected_sentences_file"] = args.selected_sentences_file
 # 建立输出路径
-out_dir = args.output_dir
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
+if not os.path.exists(config_dict["output_dir"]):
+    os.makedirs(config_dict["output_dir"])
 
-def read_selected_sentences(filename: str) -> dict:
+def read_selected_sentences(file_path: str) -> dict:
     """
-    This function reads the CSV file that was released with ECB+ corpus and returns a
-    dictionary contains those sentences IDs. This file contains the IDs of 1840 sentences
-    which were manually reviewed and checked for correctness.
-    The ECB+ creators recommend to use this subset of the dataset.
+    A CSV file is released with ECB+ corpus which list all "selected sentence" (the labeled sentences). This file
+    contains the IDs of 1840 sentences which were manually reviewed and checked for correctness. The ECB+ creators
+    recommend to use this subset of the dataset.
+    the content in this .csv file is like:
+        1 10ecbplus 1  \n
+        1 10ecbplus 3  \n
+        1 11ecbplus 1  .
 
-    :param filename: the CSV file
+    This function reads this file (given by param *file_path*), and returns a dictionary contains those sentences IDs.
+
+    example1:
+        >>> file_path = 'data\\raw\\ECBplus_coreference_sentences.csv'.
+        >>> read_selected_sentences(file_path)
+        {'1_10ecbplus.xml':[1,3],'1_11ecbplus.xml':[1]}
+
+    :param file_path: path to the CSV file
     :return: a dictionary, where a key is an XML filename (i.e. ECB+ document) and the value is a list contains all
         the sentences IDs that were selected from that XML filename.
 
-    example1:
-        filename = 'data\\\\raw\\\\ECBplus_coreference_sentences.csv'. and the content in this .csv file is like:
-            1 10ecbplus 1  \n
-            1 10ecbplus 3  \n
-            1 11ecbplus 1  .
-        return = {'1_10ecbplus.xml':[1,3],'1_11ecbplus.xml':[1]}
     """
+    import csv
     xml_to_sent_dict = {}
-    with open(filename, 'rt') as csv_file:
+    with open(file_path, 'rt') as csv_file:
         reader = csv.reader(csv_file, delimiter=',')
         # reader.next()
         next(reader)
@@ -209,7 +214,7 @@ def save_gold_mention_statistics(train_extracted_mentions, dev_extracted_mention
     :param dev_extracted_mentions: a list that contains all the mention objects in the dev split
     :param test_extracted_mentions: a list that contains all the mention objects in the test split
     '''
-    logger.info('Calculate mention statistics...')
+    logging.info('Calculate mention statistics...')
 
     all_data_mentions = train_extracted_mentions + dev_extracted_mentions +test_extracted_mentions
     filename = 'mention_stats.txt'
@@ -225,14 +230,17 @@ def save_gold_mention_statistics(train_extracted_mentions, dev_extracted_mention
     calc_split_statistics(all_data_mentions, 'Total',
                           os.path.join(args.output_dir, filename))
 
-    logger.info('Save mention statistics...')
+    logging.info('Save mention statistics...')
 
 
+from src.data.mention_data import MentionData
 def read_ecb_plus_doc(selected_sent_list: List[int],
-                      doc_name: str, doc_id: str,
-                      extracted_tokens,
-                      extracted_mentions: List,
-                      parse_all: bool, load_singletons: bool):
+                      doc_name: str,
+                      doc_id: str,
+                      extracted_tokens: List[str],
+                      extracted_mentions: List[Union[None, MentionData]],
+                      parse_all: bool,
+                      load_singletons: bool):
 
     """
     Read xml file of ecb+ corpora, extract t info and sm info, and save it.
@@ -303,31 +311,35 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
       - is_singleton = is_singleton
       - score = float(-1)
 
-    :param selected_sent_list: A list of the sentenceindex( rather than a bodysentenceindex)
-        of 'selected sentence'.
-        This parameter is activated only when parse_all= False, and then extract
-        info from only those 'selected sentences'.
-    :param doc_name: path of the xml file, e.g. 'data\\raw\\ECBplus\\1\\1_10ecb.xml'
-        The xml file should be encoded with utf-8.
-    :param doc_id: document ID of the xml file, in form of  {topic id}_{file name}{ecb/ecbplus type}).
-        e.g. '1_10ecb'.
-    :param extracted_tokens: In the 1st way, info is saved into a text file, and this parameter
-        is the io stream object(the return of open() function) of this text file.
-    :param extracted_mentions: Info is saved into this list in the 2th way. This list
-        accumulates the extracted info from multiple calls to this function on every
-        xml file.
-        In principle, any value is ok for this parameter, because this function only
-        add info to it. But usually the value is the info that extracted in the previous
-        calling of this function.
-        The info added is in the form of src.data.mention_data.MentionData object
-    :param parse_all: From which sentence to extract information
+    :param selected_sent_list:
+        A list of the sentenceindex( rather than a bodysentenceindex) of
+        'selected sentence'. This parameter is activated only when parse_all=
+        False, and then extract info from only those 'selected sentences'.
+        e.g. [0, 3]
+    :param doc_name:
+        Path of the xml file. The xml file should be encoded with utf-8.
+        e.g. 'data/raw/ECBplus\\2\\2_10ecbplus.xml' or 'data/raw/ECBplus\\1\\1_10ecb.xml'
+    :param doc_id:
+        Document ID of the xml file, in form of  {topic id}_{file
+        name}{ecb/ecbplus type}).
+        e.g. '1_10ecb' or '1_10ecbplus'.
+    :param extracted_tokens:
+        Each t info, which is represented by a string, is appended to this list.
+    :param extracted_mentions:
+        Each sm info, which is represented by src.data.mention_data.MentionData
+        object, is appended to this list.
+    :param parse_all:
+        From which sentence to extract information
         True, extract info from all sentences in xml file as in Yang setup;
         False, extract info from only the selected sentences as in Cybulska setup.
             The selected sentences is given by parameter selected_sent_list.
-    :param load_singletons:  a boolean variable indicates whether to read singleton mentions as in
+    :param load_singletons:
+        A boolean variable indicates whether to read singleton mentions as in
         Cybulska setup or whether to ignore them as in Yang setup.
     """
     ecb_file = open(doc_name, 'r', encoding='UTF-8')
+
+    import xml.etree.ElementTree as ET  # for the parse of xml file.
     tree = ET.parse(ecb_file)
     root = tree.getroot()
 
@@ -756,16 +768,15 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
         # write into output file: if go to next sentence, go to next line
         if prev_t_bodysentenceindex is None or prev_t_bodysentenceindex != cur_t_bodysentenceindex:
-            extracted_tokens[0] += '\n'
+            extracted_tokens.append("")
             prev_t_bodysentenceindex = cur_t_bodysentenceindex
         # write into output file: token info
         s = doc_id \
             + '\t' + str(cur_t_bodysentenceindex) \
             + '\t' + str(cur_t_tokenindex) \
             + '\t' + cur_t_text \
-            + '\t' + (cur_t_iid if cur_t_iid is not None else '-') \
-            + '\n'
-        extracted_tokens[0] += s
+            + '\t' + (cur_t_iid if cur_t_iid is not None else '-')
+        extracted_tokens.append(s)
 
 
 def obj_dict(obj):
@@ -817,14 +828,15 @@ def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
         as in Cybulska setup.
     :param load_singletons:  boolean variable indicates whether to read singleton mentions as in
         Cybulska setup or whether to ignore them as in Yang setup.
-    :param data_setup: the variable indicates the evaluation setup (which topics is for dev
-        set and which is for train set)
+    :param data_setup: the variable indicates the strategy of corpus split, which topics are for dev
+        set, which topics are test set, and which topics are for train set)
         - 1 for Yang and Choubey setup
         - 2 for Cybulska Kenyon-Dean setup (recommended).
     """
     # 1. topic_list
-    topic_list = os.listdir(args.ecb_path)  # ['1', '10', '11', ...]
-    topic_list = [int(d) for d in topic_list]  # [1, 10, 11, ...]
+    topic_str_list = os.listdir(args.ecb_path)  # ['1', '10', '11', ...]
+    topic_list = [int(d) for d in topic_str_list]  # [1, 10, 11, ...]
+    """topic list, e.g. [1, 10, 11, ...]"""
 
     # 2. split train/dec/test topic
     if data_setup == 1:  # Yang setup
@@ -841,38 +853,50 @@ def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
 
     # 3. split train/dec/test file
     # classify all the ecb/ecb+ docs into train/dev/test set in sorted order.
+    """
+    The sort is like::
+        1_10ecb, 1_11ecb, 1_12ecb, 1_13ecb, 1_14ecb, 1_15ecb, 1_17ecb, 1_18ecb, 1_19ecb, 1_1ecb, 1_2ecb, 1_3ecb, 1_4ecb, 1_5ecb, 1_6ecb, 1_7ecb, 1_8ecb, 1_9ecb, 
+        3_1ecb, 3_2ecb, 3_3ecb, 3_4ecb, 3_5ecb, 3_6ecb, 3_7ecb, 3_8ecb, 3_9ecb, 
+        4_10ecb, 4_11ecb, 4_12ecb, 4_13ecb, 4_14ecb, 4_1ecb, 4_2ecb, 4_3ecb, 4_4ecb, 4_5ecb, 4_6ecb, 4_7ecb, 4_8ecb, 4_9ecb, 
+        ...
+    可见这排序是失败的，1_1ecb排在1_19ecb后边，这叫什么事？
+    """
     train_ecb_files_sorted = []
-    """
-    [([0, 3], 'data\\raw\\ECBplus\\1\\1_10ecb.xml', '1_10ecb'),...]
-    """
+    r""" [([0, 3], 'data/raw/ECBplus\\1\\1_10ecb.xml', '1_10ecb'), ...] """
     dev_ecb_files_sorted = []
+    r""" [([0], 'data/raw/ECBplus\\2\\2_11ecb.xml', '2_11ecb'), ...] """
     test_ecb_files_sorted = []
+    r""" [([0, 1], 'data/raw/ECBplus\\36\\36_1ecb.xml', '36_1ecb'), ...] """
     train_ecb_plus_files_sorted = []
+    r""" [([1, 3], 'data/raw/ECBplus\\1\\1_10ecbplus.xml', '1_10ecbplus'), ...] """
     dev_ecb_plus_files_sorted = []
+    r""" [([1, 3, 4], 'data/raw/ECBplus\\2\\2_10ecbplus.xml', '2_10ecbplus'), ...] """
     test_ecb_plus_files_sorted = []
+    r"""[([1, 11], 'data/raw/ECBplus\\36\\36_10ecbplus.xml', '36_10ecbplus'), ...] """
     # traverse the topics, and fill the above list
     for topic in sorted(topic_list):
         topic_id = str(topic)
-        topic_folder_path = os.listdir(os.path.join(args.ecb_path, topic_id))
-        # classify the files: ecb， ecb+
-        ecb_files = []
-        ecb_plus_files = []
-        for file_name in topic_folder_path:
+        file_list = os.listdir(os.path.join(args.ecb_path, topic_id))
+        """['1_10ecb.xml', '1_10ecbplus.xml', '1_11ecb.xml', ... ]"""
+        # classify the file_list into ecb_file_list and ecb_plus_file_list
+        ecb_file_list = []
+        ecb_plus_file_list = []
+        for file_name in file_list:
             if 'plus' in file_name:
-                ecb_plus_files.append(file_name)
+                ecb_plus_file_list.append(file_name)
             else:
-                ecb_files.append(file_name)
-        # sort the docs
-        ecb_files = sorted(ecb_files)
-        ecb_plus_files = sorted(ecb_plus_files)
-        # traverse the ecb docs, add info to train/test/dev_ecb_files_sorted list
-        for ecb_file in ecb_files:
+                ecb_file_list.append(file_name)
+        # sort the two file_list
+        ecb_file_list = sorted(ecb_file_list)  # 没卵用，sorted完后还跟之前一毛一样
+        ecb_plus_file_list = sorted(ecb_plus_file_list)
+        # traverse the ecb docs in cur topic, add info to train/test/dev_ecb_files_sorted list
+        for ecb_file in ecb_file_list:
             # if user want to parse all sentences, then process cur doc
             # if user want to parse only the selected sentences, and cur doc includes at
             #   least 1 selected sentence, then process cur doc
             if parse_all or (ecb_file in file_to_selected_sentence):
                 # get the relative path of xml file of cur doc
-                xml_file_path = os.path.join(os.path.join(args.ecb_path, topic_id), ecb_file)
+                xml_file_path = os.path.join(os.path.join(config_dict["ecb_path"], topic_id), ecb_file)
                 # get the selected sentence id in cur doc
                 if parse_all:
                     selected_sentences = None
@@ -888,8 +912,8 @@ def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
                 else:
                     test_ecb_files_sorted.append((selected_sentences, xml_file_path,
                                                   ecb_file.replace('.xml', '')))
-        # traverse the ecb+ docs, add info to train/test/dev_ecb_plus_files_sorted list
-        for ecb_file in ecb_plus_files:
+        # traverse the ecb+ docs in cur topic, add info to train/test/dev_ecb_plus_files_sorted list
+        for ecb_file in ecb_plus_file_list:
             if parse_all or ecb_file in file_to_selected_sentence:
                 xml_file_path = os.path.join(os.path.join(args.ecb_path,topic_id),ecb_file)
                 if parse_all:
@@ -907,16 +931,20 @@ def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
                         (selected_sentences, xml_file_path, ecb_file.replace('.xml', '')))
     # combine the above list
     train_files = train_ecb_files_sorted + train_ecb_plus_files_sorted
-    test_files = test_ecb_files_sorted + test_ecb_plus_files_sorted
+    r""" [([0, 3], 'data\\raw\\ECBplus\\1\\1_10ecb.xml', '1_10ecb'), ...] """
     dev_files = dev_ecb_files_sorted + dev_ecb_plus_files_sorted
+    r""" [([0], 'data/raw/ECBplus\\2\\2_11ecb.xml', '2_11ecb'), ...] """
+    test_files = test_ecb_files_sorted + test_ecb_plus_files_sorted
+    r""" [([0, 1], 'data/raw/ECBplus\\36\\36_1ecb.xml', '36_1ecb'), ...] """
 
     # 4. extract train/dec/test mention/token info
-    train_extracted_mentions = []
+    from src.data.mention_data import MentionData
+    train_extracted_mentions: List[MentionData] = []
     """
     A sm **in train split** will be saved when the following statement is True::
         parse_all or (sm_sentenceindex in selected_sent_list)
         
-    sm info is saved as a src.mention_data.MentionData objects, which has the following property：
+    sm info is saved as a src.data.mention_data.MentionData objects, which has the following property：
     
     - doc_id = doc_id
     - cur_t_sentenceindex = cur_sm_bodysentenceindex
@@ -928,28 +956,114 @@ def read_corpora(file_to_selected_sentence: dict, parse_all: bool,
     - is_singleton = is_singleton
     - score = float(-1)
     """
-    dev_extracted_mentions = []
-    test_extracted_mentions = []
-    train_extract_tokens = ['']
-    dev_extracted_tokens = ['']
-    test_extracted_tokens = ['']
+    dev_extracted_mentions: List[MentionData] = []
+    """
+    A sm **in dev split** will be saved when the following statement is True::
+        parse_all or (sm_sentenceindex in selected_sent_list)
+
+    sm info is saved as a src.data.mention_data.MentionData objects, which has the following property：
+
+    - doc_id = doc_id
+    - cur_t_sentenceindex = cur_sm_bodysentenceindex
+    - tokens_numbers = cur_sm_tokenindex
+    - tokens_str = cur_sm_string
+    - coref_chain = cur_i_id
+    - mention_type = cur_sm_type,
+    - is_continuous = is_continuous
+    - is_singleton = is_singleton
+    - score = float(-1)
+    """
+    test_extracted_mentions: List[MentionData] = []
+    """
+    A sm **in test split** will be saved when the following statement is True::
+        parse_all or (sm_sentenceindex in selected_sent_list)
+
+    sm info is saved as a src.data.mention_data.MentionData objects, which has the following property：
+
+    - doc_id = doc_id
+    - cur_t_sentenceindex = cur_sm_bodysentenceindex
+    - tokens_numbers = cur_sm_tokenindex
+    - tokens_str = cur_sm_string
+    - coref_chain = cur_i_id
+    - mention_type = cur_sm_type,
+    - is_continuous = is_continuous
+    - is_singleton = is_singleton
+    - score = float(-1)
+    """
+    train_extract_tokens = []
+    """
+    This list includes all tokens (selected or not) in train set.
+    Each element corresponds to a token.
+    There is a "" element between 2 sentence.
+    e.g.::
+        [
+            '', 
+            '1_10ecb\t0\t0\tPerennial\t-', 
+            '1_10ecb\t0\t1\tparty\t-', 
+            '1_10ecb\t0\t2\tgirl\t-', 
+            ...
+            '1_10ecb\t0\t16\t.\t-', 
+            '', 
+            '1_10ecb\t3\t0\tA\t-', 
+            '1_10ecb\t3\t1\tfriend\tSingleton_HUM_29_1_10ecb',
+            ...
+        ]  
+    """
+    dev_extracted_tokens = []
+    """
+    This list includes all tokens (selected or not) in dev set.
+    Each element corresponds to a token.
+    There is a "" element between 2 sentence.
+    e.g.::
+        [
+            '', 
+            '1_10ecb\t0\t0\tPerennial\t-', 
+            '1_10ecb\t0\t1\tparty\t-', 
+            '1_10ecb\t0\t2\tgirl\t-', 
+            ...
+            '1_10ecb\t0\t16\t.\t-', 
+            '', 
+            '1_10ecb\t3\t0\tA\t-', 
+            '1_10ecb\t3\t1\tfriend\tSingleton_HUM_29_1_10ecb',
+            ...
+        ]  
+    """
+    test_extracted_tokens = []
+    """
+    This list includes all tokens (selected or not) in test set.
+    Each element corresponds to a token.
+    There is a "" element between 2 sentence.
+    e.g.::
+        [
+            '', 
+            '1_10ecb\t0\t0\tPerennial\t-', 
+            '1_10ecb\t0\t1\tparty\t-', 
+            '1_10ecb\t0\t2\tgirl\t-', 
+            ...
+            '1_10ecb\t0\t16\t.\t-', 
+            '', 
+            '1_10ecb\t3\t0\tA\t-', 
+            '1_10ecb\t3\t1\tfriend\tSingleton_HUM_29_1_10ecb',
+            ...
+        ]  
+    """
 
     # extract mention and token info.
-    for doc in train_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], train_extract_tokens, train_extracted_mentions, parse_all, load_singletons)
-    for doc in dev_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], dev_extracted_tokens, dev_extracted_mentions, parse_all, load_singletons)
-    for doc in test_files:
-        read_ecb_plus_doc(doc[0], doc[1], doc[2], test_extracted_tokens, test_extracted_mentions, parse_all, load_singletons)
+    for file in train_files:
+        read_ecb_plus_doc(file[0], file[1], file[2], train_extract_tokens, train_extracted_mentions, parse_all, load_singletons)
+    for file in dev_files:
+        read_ecb_plus_doc(file[0], file[1], file[2], dev_extracted_tokens, dev_extracted_mentions, parse_all, load_singletons)
+    for file in test_files:
+        read_ecb_plus_doc(file[0], file[1], file[2], test_extracted_tokens, test_extracted_mentions, parse_all, load_singletons)
 
-    # token info will be saved into the following txt file. i.e. ECB_Dev/Train/Test_corpus.txt
+    # token info is saved in txt file. i.e. ECB_Dev/Train/Test_corpus.txt
     with open(os.path.join(args.output_dir, 'ECB_Train_corpus.txt'), 'w', encoding='UTF-8') as f:
-        f.write(train_extract_tokens[0])
+        f.write("\n".join(train_extract_tokens))
     with open(os.path.join(args.output_dir, 'ECB_Dev_corpus.txt'), 'w', encoding='UTF-8') as f:
-        f.write(dev_extracted_tokens[0])
+        f.write("\n".join(dev_extracted_tokens))
     with open(os.path.join(args.output_dir, 'ECB_Test_corpus.txt'), 'w', encoding='UTF-8') as f:
-        f.write(test_extracted_tokens[0])
-    # mention info will be saved into json file.
+        f.write("\n".join(test_extracted_tokens))
+    # mention info is saved in json file.i.e. ECB_Train/Dev/Test_Event/Entity_gold_mentions.json
     save_split_mentions_to_json('Train', train_extracted_mentions)
     save_split_mentions_to_json('Dev', dev_extracted_mentions)
     save_split_mentions_to_json('Test', test_extracted_mentions)
@@ -972,7 +1086,7 @@ def main():
     - After running of this script, those output files should be moved to inermid path
       (./data/intermid) manually to get ready for feature extraction( src/features/build_features.py).
     """
-    logger.info('Read ECB+ files')
+    logging.info('Read ECB+ files')
     # Reads the full ECB+ corpus without singletons (Yang setup)
     if args.data_setup == 1:
         read_corpora(file_to_selected_sentence={},
@@ -982,11 +1096,17 @@ def main():
         file_to_selected_sentence = read_selected_sentences(args.selected_sentences_file)
         read_corpora(file_to_selected_sentence=file_to_selected_sentence,
                      parse_all=False, load_singletons=True, data_setup=2)
-    logger.info('ECB+ Reading was done.')
+    logging.info('ECB+ Reading was done.')
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
-
+    # 配置logging
+    import logging
+    logging.basicConfig(
+        # 使用fileHandler,日志文件在输出路径中(test_log.txt)
+        filename=os.path.join(config_dict["output_dir"], "test_log.txt"),
+        filemode="w",
+        # 配置日志级别
+        level=logging.INFO
+    )
     main()
