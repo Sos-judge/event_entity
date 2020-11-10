@@ -479,7 +479,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
     cd_i_info: dict[str, tuple[list[str], str]] = {}
     """
-    {'cd_i_id': (cd_i_tid, cd_i_desc)}
+    {'cd_i_id': (cd_i_tidlist, cd_i_desc)}
         - cd_i_id: if the 'instance_id ' attr of corresponding tm and the 'note'
           attr of the corresponding r is equal, cd_i_id is this value. otherwise, a 
           accordance strategy is need:
@@ -514,8 +514,12 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
     # 1.extract info from <Markables>...</Markables> tag
     """
     iterate through every tag in <Markables>...</Markables>
-    there are 4 kinds of conditions and 3 kinds of mention marked as (1),(2)source
-    mention,(3)CD target mention,(4)WD target mention:    
+    there are 4 kinds of conditions: token anchor and 3 kinds of mention: 
+        (1)token anchor,
+        (2)source mention,
+        (3)CD target mention,
+        (4)WD target mention:    
+    e.g.::
         <Markables>
         (2) <XXX m_id="48" note="byCROMER" >
         (1)     <token_anchor t_id="19"/>
@@ -528,29 +532,29 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         </Markables>
     """
     cur_m_id = ''
-    for action in root.find('Markables').iter():
-        if action.tag == 'Markables':
+    for cur_tag in root.find('Markables').iter():
+        if cur_tag.tag == 'Markables':
             continue
         # for condition (1)
-        elif action.tag == 'token_anchor':
-            sm_id_to_t_id[cur_m_id].append(action.attrib['t_id'])
+        elif cur_tag.tag == 'token_anchor':
+            sm_id_to_t_id[cur_m_id].append(cur_tag.attrib['t_id'])
         # for condition (2)(3)(4)
         else:
-            cur_m_id = action.attrib['m_id']
+            cur_m_id = cur_tag.attrib['m_id']
             # for condition (3)(4), it is a tm
-            if 'TAG_DESCRIPTOR' in action.attrib:
+            if 'TAG_DESCRIPTOR' in cur_tag.attrib:
                 # for condition (3), it is a CD tm
-                if 'instance_id' in action.attrib:
+                if 'instance_id' in cur_tag.attrib:
                     tm_info[cur_m_id] = (
-                        action.attrib['TAG_DESCRIPTOR'], action.attrib['instance_id'])
+                        cur_tag.attrib['TAG_DESCRIPTOR'], cur_tag.attrib['instance_id'])
                 # for condition (4), it is a WD tm
                 else:
                     tm_info[cur_m_id] = (
-                        action.attrib['TAG_DESCRIPTOR'], action.tag)
+                        cur_tag.attrib['TAG_DESCRIPTOR'], cur_tag.tag)
             # for condition (2), it is a source mention
             else:
                 sm_id_to_t_id[cur_m_id] = []
-                sm_info[cur_m_id] = action.tag
+                sm_info[cur_m_id] = cur_tag.tag
 
     # 2.extract info from <Relations><INTRA_DOC_COREF>...</INTRA_DOC_COREF></Relations>
     """
@@ -687,15 +691,15 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
     # 6. sm info is saved into *extracted_mentions*
     for cur_sm_id in sm_id_to_t_id:
-        cur_sm_sentenceindex = int(t_info[
-                                       sm_id_to_t_id[cur_sm_id][0]
-                                   ]['t_sentenceindex'])
         '''
         check if cur mention need to be save.
         if user want to parse all sentences, then process cur mention
         if user want to parse only the selected sentences, and cur mention is
             selected，then process cur mention
         '''
+        cur_sm_sentenceindex = int(t_info[
+                                       sm_id_to_t_id[cur_sm_id][0]
+                                   ]['t_sentenceindex'])
         if not (parse_all or (cur_sm_sentenceindex in selected_sent_list)):
             continue
 
@@ -707,13 +711,13 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         cur_i_id = sm_id_to_i_id[cur_sm_id]
         cur_i_type = i_id_to_i_type(cur_i_id)
 
-        # ---------------------------------------------------------------------
+        """
         # the 2 types above should be same
         # if cur_sm_type != cur_i_type:
         #     print('err: diff types in same coref: {}'.format(cur_i_id))
         #     print('  type_attr_of_cur_c: {}'.format(cur_i_type))
         #     print('  type_attr_of_cur_m: {}'.format(cur_sm_type))
-        # ------------------------------------------------------------------------
+        """
 
         # (3
         cur_sm_tokenindex = []  # One sm has some t, t has *number* attr( token index), this is a list of every *number*
@@ -751,7 +755,6 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
 
     # 7. t info is saved into text file
     prev_t_bodysentenceindex = None  # bodysentenceindex of previous sentence
-
     for cur_t_id in t_info:
         cur_t = t_info[cur_t_id]
         cur_t_sentenceindex = int(cur_t['t_sentenceindex'])
