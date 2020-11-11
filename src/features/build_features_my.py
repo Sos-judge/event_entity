@@ -5,13 +5,13 @@ import json
 import torch
 import argparse
 import _pickle as cPickle
-import logging
+from typing import Dict, List, Tuple, Union  # for type hinting
 from collections import defaultdict
 
 # 三方库
 import spacy
 from nltk.corpus import wordnet as wn
-from breakpointAlarm.breakpointAlarm import alarm
+from breakpointAlarm import alarm
 
 # 本地库
 from src.shared.classes import Document, Sentence, Token, EventMention, EntityMention
@@ -46,6 +46,16 @@ with open(args.config_path, 'r') as js_file:
 # copy config file into output dir
 with open(os.path.join(args.output_path, 'build_features_config.json'), "w") as js_file:
     json.dump(config_dict, js_file, indent=4, sort_keys=True)
+
+# 配置logging
+import logging
+logging.basicConfig(
+    # 使用fileHandler,日志文件在输出路径中(test_log.txt)
+    filename=os.path.join(out_dir, "test_log.txt"),
+    filemode="w",
+    # 配置日志级别
+    level=logging.INFO
+)
 
 
 def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool, is_gold_mentions):
@@ -195,7 +205,7 @@ def load_predicted_mentions(docs: dict, events_json: str, entities_json: str):
 #     :param entities_json: a JSON file contains the gold event mentions
 #     :return:
 #     '''
-#     logger.info('Loading gold mentions...')
+#     logging.info('Loading gold mentions...')
 #     docs = load_ECB_plus(split_txt_file)
 #     load_gold_mentions(docs, events_json, entities_json)
 #     return docs
@@ -211,7 +221,7 @@ def load_predicted_data(docs: dict, pred_events_json: str, pred_entities_json: s
     :param pred_entities_json: path to the JSON file contains predicted entities mentions
     :return:
     '''
-    logger.info('Loading predicted mentions...')
+    logging.info('Loading predicted mentions...')
     load_predicted_mentions(docs, pred_events_json, pred_entities_json)
 
 
@@ -402,8 +412,8 @@ def match_allen_srl_structures(dataset, srl_data, is_gold):
                                                                   event_srl.arg_loc, 'AM-LOC', is_gold):
                                     matched_args_count += 1
 
-    logger.info('SRL matched events - ' + str(matched_events_count))
-    logger.info('SRL matched args - ' + str(matched_args_count))
+    logging.info('SRL matched events - ' + str(matched_events_count))
+    logging.info('SRL matched args - ' + str(matched_args_count))
 
 
 def match_entity_with_srl_argument(sent_entities, matched_event ,srl_arg,rel_name, is_gold):
@@ -503,9 +513,9 @@ def load_srl_info(dataset, srl_data, is_gold):
                                 matched_args_count += 1
                     else:
                         unmatched_event_count += 1
-    logger.info('SRL matched events - ' + str(matched_events_count))
-    logger.info('SRL unmatched events - ' + str(unmatched_event_count))
-    logger.info('SRL matched args - ' + str(matched_args_count))
+    logging.info('SRL matched events - ' + str(matched_events_count))
+    logging.info('SRL unmatched events - ' + str(unmatched_event_count))
+    logging.info('SRL matched args - ' + str(matched_args_count))
 
 
 def find_topic_gold_clusters(topic):
@@ -716,30 +726,31 @@ def main(args):
     """
 
     # 1. load tokens
-    logger.info('Training data - loading tokens')
-    training_data = load_ECB_plus(config_dict["train_text_file"])
-    """{'XX_XXecb': a src.shared.classes.Document Obj, ... } """
-    logger.info('Dev data - Loading tokens')
+    from src.shared.classes import Document
+    logging.info('Training data - loading tokens')
+    training_data: Dict[str, Document] = load_ECB_plus(config_dict["train_text_file"])
+    """{'XX_XXecb': Document Obj, ... } """
+    logging.info('Dev data - Loading tokens')
     dev_data = load_ECB_plus(config_dict["dev_text_file"])
-    """{'XX_XXecb': a src.shared.classes.Document Obj, ... } """
-    logger.info('Test data - Loading tokens')
+    """{'XX_XXecb': Document Obj, ... } """
+    logging.info('Test data - Loading tokens')
     test_data = load_ECB_plus(config_dict["test_text_file"])
-    """{'XX_XXecb': a src.shared.classes.Document Obj, ... } """
+    """{'XX_XXecb': Document Obj, ... } """
 
     # 2. load gold mention
-    logger.info('Training data - Loading gold mentions')
+    logging.info('Training data - Loading gold mentions')
     load_gold_mentions(training_data,
                        config_dict["train_event_mentions"], config_dict["train_entity_mentions"])
-    logger.info('Dev data - Loading gold mentions')
+    logging.info('Dev data - Loading gold mentions')
     load_gold_mentions(dev_data,
                        config_dict["dev_event_mentions"], config_dict["dev_entity_mentions"])
-    logger.info('Test data - Loading gold mentions')
+    logging.info('Test data - Loading gold mentions')
     load_gold_mentions(test_data,
                        config_dict["test_event_mentions"], config_dict["test_entity_mentions"])
 
     # 3. load predicted mention
     if config_dict["load_predicted_mentions"]:
-        logger.info('Test data - Loading predicted mentions')
+        logging.info('Test data - Loading predicted mentions')
         load_predicted_mentions(test_data,
                                 config_dict["pred_event_mentions"], config_dict["pred_entity_mentions"])
 
@@ -769,18 +780,18 @@ def main(args):
 
     # 6.load srl
     if config_dict["use_srl"]:
-        logger.info('Loading SRL info')
+        logging.info('Loading SRL info')
         if config_dict["use_allen_srl"]:  # use the SRL system which is implemented in AllenNLP (currently - a deep BiLSTM model (He et al, 2017).)
             srl_data = read_srl(config_dict["srl_output_path"])
             #
-            logger.info('Training gold mentions - loading SRL info')
+            logging.info('Training gold mentions - loading SRL info')
             match_allen_srl_structures(train_set, srl_data, is_gold=True)
-            logger.info('Dev gold mentions - loading SRL info')
+            logging.info('Dev gold mentions - loading SRL info')
             match_allen_srl_structures(dev_set, srl_data, is_gold=True)
-            logger.info('Test gold mentions - loading SRL info')
+            logging.info('Test gold mentions - loading SRL info')
             match_allen_srl_structures(test_set, srl_data, is_gold=True)
             if config_dict["load_predicted_mentions"]:
-                logger.info('Test predicted mentions - loading SRL info')
+                logging.info('Test predicted mentions - loading SRL info')
                 match_allen_srl_structures(test_set, srl_data, is_gold=False)
         else:  # Use SwiRL SRL system (Surdeanu et al., 2007)
             srl_data = parse_swirl_output(config_dict["srl_output_path"])
@@ -802,52 +813,52 @@ def main(args):
                 }    
             """
 
-            logger.info('Training gold mentions - loading SRL info')
+            logging.info('Training gold mentions - loading SRL info')
             load_srl_info(train_set, srl_data, is_gold=True)
-            logger.info('Dev gold mentions - loading SRL info')
+            logging.info('Dev gold mentions - loading SRL info')
             load_srl_info(dev_set, srl_data, is_gold=True)
-            logger.info('Test gold mentions - loading SRL info')
+            logging.info('Test gold mentions - loading SRL info')
             load_srl_info(test_set, srl_data, is_gold=True)
             if config_dict["load_predicted_mentions"]:
-                logger.info('Test predicted mentions - loading SRL info')
+                logging.info('Test predicted mentions - loading SRL info')
                 load_srl_info(test_set, srl_data, is_gold=False)
 
     # 7. load depprase
     if config_dict["use_dep"]:  # use dependency parsing
-        logger.info('Augmenting predicate-arguments structures using dependency parser')
-        logger.info('Training gold mentions - loading predicates and their arguments with dependency parser')
+        logging.info('Augmenting predicate-arguments structures using dependency parser')
+        logging.info('Training gold mentions - loading predicates and their arguments with dependency parser')
         find_args_by_dependency_parsing(train_set, is_gold=True)
-        logger.info('Dev gold mentions - loading predicates and their arguments with dependency parser')
+        logging.info('Dev gold mentions - loading predicates and their arguments with dependency parser')
         find_args_by_dependency_parsing(dev_set, is_gold=True)
-        logger.info('Test gold mentions - loading predicates and their arguments with dependency parser')
+        logging.info('Test gold mentions - loading predicates and their arguments with dependency parser')
         find_args_by_dependency_parsing(test_set, is_gold=True)
         if config_dict["load_predicted_mentions"]:
-            logger.info('Test predicted mentions - loading predicates and their arguments with dependency parser')
+            logging.info('Test predicted mentions - loading predicates and their arguments with dependency parser')
             find_args_by_dependency_parsing(test_set, is_gold=False)
 
     # 8. load left_right_mentiosn
     if config_dict["use_left_right_mentions"]:  # use left and right mentions heuristic
-        logger.info('Augmenting predicate-arguments structures using leftmost and rightmost entity mentions')
-        logger.info('Training gold mentions - loading predicates and their arguments ')
+        logging.info('Augmenting predicate-arguments structures using leftmost and rightmost entity mentions')
+        logging.info('Training gold mentions - loading predicates and their arguments ')
         find_left_and_right_mentions(train_set, is_gold=True)
-        logger.info('Dev gold mentions - loading predicates and their arguments ')
+        logging.info('Dev gold mentions - loading predicates and their arguments ')
         find_left_and_right_mentions(dev_set, is_gold=True)
-        logger.info('Test gold mentions - loading predicates and their arguments ')
+        logging.info('Test gold mentions - loading predicates and their arguments ')
         find_left_and_right_mentions(test_set, is_gold=True)
         if config_dict["load_predicted_mentions"]:
-            logger.info('Test predicted mentions - loading predicates and their arguments ')
+            logging.info('Test predicted mentions - loading predicates and their arguments ')
             find_left_and_right_mentions(test_set, is_gold=False)
 
     # 9. load elmo
     if config_dict["load_elmo"]: # load ELMo embeddings
         elmo_embedder = ElmoEmbedding(config_dict["options_file"], config_dict["weight_file"])
-        logger.info("Loading ELMO embeddings...")
+        logging.info("Loading ELMO embeddings...")
         load_elmo_embeddings(train_set, elmo_embedder, set_pred_mentions=False)
         load_elmo_embeddings(dev_set, elmo_embedder, set_pred_mentions=False)
         load_elmo_embeddings(test_set, elmo_embedder, set_pred_mentions=True)
 
     # 10.
-    logger.info('Storing processed data...')
+    logging.info('Storing processed data...')
     with open(os.path.join(args.output_path,'training_data'), 'wb') as f:
         cPickle.dump(train_set, f)
     with open(os.path.join(args.output_path,'dev_data'), 'wb') as f:
@@ -857,7 +868,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
-
     main(args)

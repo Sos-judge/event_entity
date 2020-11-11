@@ -143,10 +143,12 @@ In case you want to create the data from scratch, do the following steps:
 * Output files of SwiRL SRL system on the ECB+ corpus (already provided in this repo at `data/external/swirl_output`).
 * Download ELMo's files (options file and weights) from *https://allennlp.org/elmo* (we used Original 5.5B model files. It is at `Pre-trained ELMo Models` chapter in that website). Download and put it into `data\external\elmo`.
 * Feature extraction. 
-    Run the feature extraction script, which extracts predicate-argument structures, mention head and ELMo embeddings,
-    for each mention in each split (train/dev/test):
+    Run the feature extraction script, which extracts predicate-argument
+    structures, mention head and ELMo embeddings, for each mention in each split
+    (train/dev/test):
     * run with command:
-        `python src/features/build_features.py --config_path build_features_config.json --output_path <output_path>`
+        `python src/features/build_features.py --config_path
+        build_features_config.json --output_path <output_path>`
         * Param:
             * `config_path` - a path to a JSON file holds the feature extraction configuration (build_features_config.json).
                 An explanation about this configuration file is provided in config_files_readme.md.

@@ -437,7 +437,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
     sm_id_to_t_id: dict[str, list[str]] = {}
     """
     {sm_id: sm_tidlist}
-        - sm_id: id of a sm. **All sm included( selected and not; sg sm, wd sm and
+        - sm_id: id of a sm. **All sm included( selected and not; sg sm(if loaded), wd sm and
           cd sm).**
         - sm_tidlist:[t_id,t_id,...]. t_id is the id of all(in cur doc) the t that
           refer to this sm.
@@ -459,6 +459,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
     """
     {wd_i_id:(t_id_list, wd_i_desc)}
         - wd_i_id: represented in the form of 'INTRA_{wd_i_type}_{rId}_{docId}'.
+            **All wd_i included( selected or not).**
           
           - wd_i_type: A wd_i has many tm and sm, each of them has a type. wd_i_type
             equals to the type if all the types are same; otherwise, a accordance strategy
@@ -546,11 +547,15 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
                 # for condition (3), it is a CD tm
                 if 'instance_id' in cur_tag.attrib:
                     tm_info[cur_m_id] = (
-                        cur_tag.attrib['TAG_DESCRIPTOR'], cur_tag.attrib['instance_id'])
+                        cur_tag.attrib['TAG_DESCRIPTOR'],
+                        cur_tag.attrib['instance_id']
+                    )
                 # for condition (4), it is a WD tm
                 else:
                     tm_info[cur_m_id] = (
-                        cur_tag.attrib['TAG_DESCRIPTOR'], cur_tag.tag)
+                        cur_tag.attrib['TAG_DESCRIPTOR'],
+                        cur_tag.tag
+                    )
             # for condition (2), it is a source mention
             else:
                 sm_id_to_t_id[cur_m_id] = []
@@ -564,16 +569,18 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         (i1) <INTRA_DOC_COREF r_id="37615" >
         (i2)    <source m_id="24" />
         (i2)    <source m_id="25" />
-        (i2)    <target m_id="17" />
+        (i3)    <target m_id="17" />
              </INTRA_DOC_COREF>
+             ...
         </Relations>
+    填写了:wd_i_info完成, mapped_sm_id填了wd_sm的部分，sm_id_to_i_id填了wd_sm的部分
     """
     cur_wd_i_id = ''
     cur_wd_i_tidlist= []
     for cur_wd_r in root.find('Relations').findall('INTRA_DOC_COREF'):
-        for child in cur_wd_r.iter():
+        for cur_label in cur_wd_r.iter():
             # for condition (i1), cur r is a WD r
-            if child.tag == 'INTRA_DOC_COREF':
+            if cur_label.tag == 'INTRA_DOC_COREF':
                 # two strategy for setting the cur_wd_i_type, leave the accordance check for later.
                 strategy = 'Barhom2019 strategy'
                 if strategy == 'Barhom2019 strategy':
@@ -593,16 +600,18 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
                     cur_wd_tm_tag = tm_info[cur_wd_r.find('target').get('m_id')][1]
                     cur_wd_tm_type = m_tag_to_type(cur_wd_tm_tag)
                     cur_wd_i_type = cur_wd_tm_type
-                cur_wd_i_id = 'INTRA_{}_{}_{}'.format(cur_wd_i_type, child.attrib['r_id'], doc_id)
+                elif strategy == '一致性检查':
+                    pass #检查tm和所有sm的type，如果一致，才作为wd_i_type
+                cur_wd_i_id = 'INTRA_{}_{}_{}'.format(cur_wd_i_type, cur_label.attrib['r_id'], doc_id)
                 wd_i_info[cur_wd_i_id] = ()
             # for condition (i2), it is the sm in cur r
-            elif child.tag == 'source':
-                cur_wd_i_tidlist += (sm_id_to_t_id[child.attrib['m_id']])
-                mapped_sm_id.append(child.attrib['m_id'])
-                sm_id_to_i_id[child.attrib['m_id']] = cur_wd_i_id
+            elif cur_label.tag == 'source':
+                cur_wd_i_tidlist += (sm_id_to_t_id[cur_label.attrib['m_id']])
+                mapped_sm_id.append(cur_label.attrib['m_id'])
+                sm_id_to_i_id[cur_label.attrib['m_id']] = cur_wd_i_id
             # for condition (i3), it is the tm in cur r
-            else:
-                wd_i_info[cur_wd_i_id] = (cur_wd_i_tidlist, tm_info[child.attrib['m_id']][0])
+            elif cur_label.tag == 'target':
+                wd_i_info[cur_wd_i_id] = (cur_wd_i_tidlist, tm_info[cur_label.attrib['m_id']][0])
                 # end of iteration of cur relation, clear variable for iteration of the next relation.
                 cur_wd_i_tidlist = []
 
@@ -617,30 +626,36 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
         (c3)      <target m_id="49" />
               </CROSS_DOC_COREF>
         </Relations>
+    填写了:cd_i_info完成, mapped_sm_id填了cd_sm的部分，sm_id_to_i_id填了cd_sm的部分
     """
     cur_cd_i_id = ''
     cur_cd_i_tidlist = []
     for cross_doc_coref in root.find('Relations').findall('CROSS_DOC_COREF'):
-        for child in cross_doc_coref.iter():
+        for cur_label in cross_doc_coref.iter():
             # for condition (c1), cur r is CD r
-            if child.tag == 'CROSS_DOC_COREF':
+            if cur_label.tag == 'CROSS_DOC_COREF':
                 # set the cd_i_id as r_note immediately, leave the accordance check for later.
-                cur_cd_r_note = child.attrib['note']
+                cur_cd_r_note = cur_label.attrib['note']
                 cur_cd_i_id = cur_cd_r_note
                 cd_i_info[cur_cd_i_id] = ()
             # for condition (c2), it is the sm in cur r
-            elif child.tag == 'source':
-                cur_cd_i_tidlist += (sm_id_to_t_id[child.attrib['m_id']])
-                mapped_sm_id.append(child.attrib['m_id'])
-                sm_id_to_i_id[child.attrib['m_id']] = cur_cd_i_id
+            elif cur_label.tag == 'source':
+                cur_cd_i_tidlist += (sm_id_to_t_id[cur_label.attrib['m_id']])
+                mapped_sm_id.append(cur_label.attrib['m_id'])
+                sm_id_to_i_id[cur_label.attrib['m_id']] = cur_cd_i_id
             # for condition (c3), it is the tm in cur r
             else:
                 cd_i_info[cur_cd_i_id] = (
-                    cur_cd_i_tidlist, tm_info[child.attrib['m_id']][0])
+                    cur_cd_i_tidlist,
+                    tm_info[cur_label.attrib['m_id']][0]
+                )
                 # end of iteration of cur relation, clear variable for iteration of the next relation.
                 cur_cd_i_tidlist = []
 
     # 4. extract info from <token>...</token>
+    """
+    填写了:t_info基本完成，只是对属于sg_i的token，其i_id和i_desc全为None，没有根据load_singletons做判断。
+    """
     for cur_t in root.findall('token'):
         t_info[cur_t.attrib['t_id']] = {
             't_text': cur_t.text,
@@ -659,6 +674,12 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
             t_info[cur_t_id]['i_desc'] = wd_i_info[cur_wd_i_id][1]
 
     # 5. Load singletons if required
+    """
+    if load_singletons:
+        填写了:cd_i_info完成； mapped_sm_id填了cd_sm的部分；
+        填写了：sm_id_to_i_id填了sg_sm的部分,支持sm_id_to_i_id填完了；
+        填写了：t_info中属于sg_i的token的i_id和i_desc，至此t_info填完了。
+    """
     if load_singletons:
         # find the sg sm(singleton source mention is sm that isn't refer to any cd tm or wd tm)
         for mid in sm_id_to_t_id:
@@ -669,17 +690,17 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
                 # iterate through every sg sm
                 cur_sg_sm_id = mid
 
-                # 1. create instance id for each singleton mention
+                # (1. create instance id for each singleton mention
                 cur_sg_sm_tag = sm_info[cur_sg_sm_id]
                 cur_sg_sm_type = m_tag_to_type(cur_sg_sm_tag)
                 cur_sg_i_type = cur_sg_sm_type  # a sg_i has only one sg_sm, no accordance check needed.
                 cur_sg_i_id = 'Singleton_{}_{}_{}'.format(cur_sg_i_type, cur_sg_sm_id, doc_id)
-                sg_i_info[cur_sg_i_id] = ()
-                # 2. updated sm_id_to_i_id
+                sg_i_info[cur_sg_i_id] = (sm_id_to_t_id[cur_sg_sm_id], "")
+                # (2. updated sm_id_to_i_id
                 # this mention is related to the singleton instance, so this mention appears
                 # in this singleton coref, so this mention can be listed in sm_id_to_i_id
                 sm_id_to_i_id[cur_sg_sm_id] = cur_sg_i_id
-                # 3. updated tokens
+                # (3. updated tokens
                 # the token of this mention had it rel_id property as None, after this mention
                 # is related to the singleton instance, the rel_id property should save the info
                 # of the singleton instance.
