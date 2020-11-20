@@ -214,9 +214,9 @@ class Sentence(object):
 
         return toks
 
-    def add_gold_mention(self, mention, is_event):
+    def add_gold_mention(self, mention: "Mention", is_event: bool):
         '''
-        This function gets a mention object and adds it to the gold event mentions list if the
+        This function gets a mention object and adds it to the gold event mentions list of this sentence obj if the
         flag is_event = True. Otherwise the mention object will be added to the gold entity mentions list
 
         :param mention: a mention object

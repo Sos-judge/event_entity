@@ -1,7 +1,7 @@
 import os
 import sys
 import spacy
-
+from typing import Dict, List, Tuple, Union  # for type hinting
 # sys.path.append("/src/shared/")
 # for pack in os.listdir("src"):
 #     sys.path.append(os.path.join("src", pack))
@@ -19,6 +19,7 @@ def order_docs_by_topics(docs):
     '''
     Gets list of document objects and returns a Corpus object.
     The Corpus object contains Document objects, ordered by their gold topics
+
     :param docs: list of document objects
     :return: Corpus object
     '''
@@ -37,62 +38,106 @@ def order_docs_by_topics(docs):
     return corpus
 
 
-def load_ECB_plus(processed_ecb_file: str) -> dict:
-    '''
-    This function gets the intermediate data  (train/test/dev split after it was extracted
-    from the XML files and stored as a text file) and load it into objects
-    that represent a document structure
+def load_ECB_plus(processed_ecb_file: str) -> Dict[str, Document]:
+    r"""
+    This function gets the intermediate data  ECB_Train/test/dev_corpus.text and load it into a dict of Document obj.
 
-    :param processed_ecb_file: the filename of the intermediate representation of the split,
-    which is stored as a text file
-    :return: dictionary of document objects, represents the documents in the split.
-    '''
+    Note: load_ECB_plus 不是说只load 源自X_Xecbplus.xml的数据。
+    这里ECB_plus指的是整个语料库。
+    参数指定的ECB_Train/Test/Dev_corpus.txt文件中包含整个语料库的信息。
+
+    Example of the text file::
+
+        1_10ecb	0	0	Perennial	-
+        1_10ecb	0	1	party	-
+        1_10ecb	0	2	girl	-
+        1_10ecb	0	3	Tara	HUM16236184328979740
+        1_10ecb	0	4	Reid	HUM16236184328979740
+
+    Example of the return::
+
+        {
+            '1_10ecb': Document obj,
+            '1_11ecb': Document obj,
+            ...
+        }
+
+    In detail, each Document obj in return dict includes follow info::
+
+        Document_obj
+            Document_obj.sentences -> Sentence_obj
+        Sentence_obj
+            Sentence_obj.tokens -> Token_obj
+        Token_obj
+
+    :param processed_ecb_file: The path of the ECB_Train/test/dev_corpus.text.
+        e.g. "data/interim/cybulska_setup/ECB_Train_corpus.txt".
+    :return: A dictionary of document objects, which represents the documents in the split.
+    """
     doc_changed = True
     sent_changed = True
     docs = {}
-    last_doc_name = None
+    last_doc_id = None
     last_sent_id = None
 
     for line in open(processed_ecb_file, 'r'):
-        stripped_line = line.strip()
+        stripped_line = line.strip()  # 去掉多余的空格
         try:
+            # if  line != "\n"
             if stripped_line:
                 doc_id, sent_id, token_num, word, coref_chain = stripped_line.split('\t')
-                doc_id = doc_id.replace('.xml', '')
+                doc_id = doc_id.replace('.xml', '')  # 这句是废话，因为doc_id中都没有“.xml”。
+            # if line == "\n"
+            else:
+                pass
         except:
+            # There may be a exception because some special line like:
+            # '2_5ecbplus\t0\t9\tAwards\t\tACT16239369414744113'
+            # There are 5 \t and you will get 6 elements, instead of 5 elements, after split('\t').
+            # The '\t\t' makes a unexpected empty element.
+            # So, you need to filter out the empty element.
             row = stripped_line.split('\t')
             clean_row = []
             for item in row:
+                # append the normal element
                 if item:
                     clean_row.append(item)
+                # filter out the empty element
+                else:
+                    pass
             doc_id, sent_id, token_num, word, coref_chain = clean_row
-            doc_id = doc_id.replace('.xml', '')
+            doc_id = doc_id.replace('.xml', '')  # 这句是废话，因为doc_id中都没有“.xml”。
 
         if stripped_line:
             sent_id = int(sent_id)
 
-            if last_doc_name is None:
-                last_doc_name = doc_id
-            elif last_doc_name != doc_id:
+            # test the change of doc and sent
+            if last_doc_id is None:
+                last_doc_id = doc_id
+            elif last_doc_id != doc_id:
                 doc_changed = True
                 sent_changed = True
-            if doc_changed:
-                new_doc = Document(doc_id)
-                docs[doc_id] = new_doc
-                doc_changed = False
-                last_doc_name = doc_id
-
             if last_sent_id is None:
                 last_sent_id = sent_id
             elif last_sent_id != sent_id:
                 sent_changed = True
+
+            # new Document
+            if doc_changed:
+                new_doc = Document(doc_id)
+                docs[doc_id] = new_doc
+                doc_changed = False
+                last_doc_id = doc_id
+
+            # new Sentence
             if sent_changed:
                 new_sent = Sentence(sent_id)
-                sent_changed = False
                 new_doc.add_sentence(sent_id, new_sent)
+                sent_changed = False
                 last_sent_id = sent_id
 
-            new_tok = Token(token_num,word,'-')
+            # new Token
+            new_tok = Token(token_num, word, '-')
             new_sent.add_token(new_tok)
 
     return docs

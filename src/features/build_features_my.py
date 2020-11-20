@@ -23,8 +23,8 @@ from src.features.extraction_utils import *
 #     sys.path.append(os.path.join("src", pack))
 # sys.path.append("/src/shared/")
 
+# spaCy使用了预训练模型“en”
 nlp = spacy.load('en')
-
 
 # parse the arguments in command
 parser = argparse.ArgumentParser(description='Feature extraction (predicate-argument structures,'
@@ -58,48 +58,66 @@ logging.basicConfig(
 )
 
 
-def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool, is_gold_mentions):
+def load_mentions_from_json(mentions_json_file: str,
+                            docs: Dict[str, Document],
+                            is_event: bool, is_gold_mentions) -> None:
     """
-    * Load mentions info from a JSON file.
+    This function extract mention info from a given json file and add the
+    mention info to param *docs*. The *docs* param has a structure as shown below::
 
-      * the path to this json file is given by *mentions_json_file* param.
-      * the type of this json file is given by *is_event* and *is_gold_mentions* param:
-
-        * when *is_event* = True and *is_gold_mentions* = True, mentions in json file are
-          **gold event mention**.
-        * when *is_event* = False and *is_gold_mentions* = True, mentions in json file are
-          **gold entity mention**.
-        * when *is_event* = True and *is_gold_mentions* = False, mentions in json file are
-          **predicted event mention**,
-        * when *is_event* = False and *is_gold_mentions* = False, mentions in json file are
-          **predicted entity mention**.
+        普通变量是docs本来就有的信息，
+        尖括号中的变量是本函数运行后添加的信息。
+        Document_obj
+            Document_obj.sentences -> Sentence_obj
+            <gold/pred_event/entity_mentions> -> Mention obj
+        Sentence_obj
+            Sentence_obj.tokens -> Token_obj
+        <Mention_obj>
+            <cd/wd_coref_chain> -> Coref_chain_str
+            <doc_id> -> Document_obj
+            <sent_id> -> Sentence_obj
+            <tokens> -> Token_obj
+        Token_obj
+            <gold_event/entity_cd/wd_coref_chain> -> Coref_chain_str
 
     * This function has a Sanity check. Check whether mention in json file and the corresponding
-      Mention obj in docs has same token. If not this function stop and err info will be printed.
+      mention in docs has same token. If not this function stop and err info will be printed.
 
-    * This function extract mention info from json file and add to docs.
+    * The json file is like (a list of **mention dict**)::
 
-      * The *docs* param has a structure like::
+        [
+            {
+                "coref_chain": "HUM16284637796168708",
+                "doc_id": "1_10ecb",
+                "is_continuous": true,
+                "is_singleton": false,
+                "mention_type": "HUM",
+                "score": -1.0,
+                "sent_id": 0,
+                "tokens_number": [
+                    13
+                ],
+                "tokens_str": "rep"
+            },
+            {
+                "coref_chain": "HUM16236184328979740",
+                "doc_id": "1_10ecb",
+                "is_continuous": true,
+                "is_singleton": false,
+                "mention_type": "HUM",
+                "score": -1.0,
+                "sent_id": 0,
+                "tokens_number": [
+                    3,
+                    4
+                ],
+                "tokens_str": "Tara Reid"
+            },
 
-            {XX_XXecb': Document obj, ...}
-                        Document.sentence = [Sentence obj]
-                                             Sentence.gold/pred_event/entity_mentions list = [Mention obj]
-                                             Sentence.tokens list = [Token obj]
-                                                                     Token.gold_event/entity_coref_chain = [Mention obj]
 
-      * 1st function: A Mention obj will be created based on each mention info in json  file, and it
-        will be add to **Sentence.gold/pred_event/entity_mentions** list.
-
-        * **gold event mentions** are added to **gold_event_mentions** list
-        * **gold entity mentions** are added to **gold_entity_mentions** list
-        * **predicted event mentions** are added to **pred_event_mentions** list
-        * **predicted entity mentions** are added to **pred_entity_mentions** list
-
-      * 2nd function: A Mention obj will be created based on each mention info in json file, and if
-        it is a gold mention, it will be add to **Token.gold_event/entity_coref_chain**.
-
-    :param mentions_json_file: path to the JSON file contains the mentions. The json file has a
-     content like that of ECB_Dev/Test/Train_Entity/Event_gold_mentions.json.
+    :param mentions_json_file: path to the JSON file that contains the mentions.
+        The json file has a content like that of
+        ECB_Dev/Test/Train_Entity/Event_gold_mentions.json.
 
     :param docs: { 'XX_XXecb': a src.shared.classes.Document Obj }
 
@@ -114,7 +132,7 @@ def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool,
         js_mentions = json.load(js_file)
 
     for js_mention in js_mentions:
-        doc_id = js_mention["doc_id"].replace('.xml', '')
+        doc_id = js_mention["doc_id"].replace('.xml', '')  # 这是废话，因为doc_id里都没有‘.xml’
         sent_id = js_mention["sent_id"]
         tokens_numbers = js_mention["tokens_number"]
         mention_type = js_mention["mention_type"]
@@ -133,7 +151,6 @@ def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool,
         """
         # Find the tokens of corresponding mention in docs.
         try:
-
             token_objects = docs[doc_id].get_sentences()[sent_id].find_mention_tokens(tokens_numbers)
         except:
             print('error when looking for mention tokens')
@@ -148,22 +165,25 @@ def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool,
         # whether the tokens are same
             pass
 
-        # 1. Mark the mention's gold coref chain in its tokens
+        # 1. add coref chain to Token.
         if is_gold_mentions:
             for token in token_objects:
                 if is_event:
                     token.gold_event_coref_chain.append(coref_chain)
                 else:
                     token.gold_entity_coref_chain.append(coref_chain)
-        # 2.
+
+        # 2. Create Mention
         if is_event:
-            mention = EventMention(doc_id, sent_id, tokens_numbers,token_objects,mention_str, head_text,
+            mention = EventMention(doc_id, sent_id, tokens_numbers, token_objects, mention_str, head_text,
                                    head_lemma, is_singleton, is_continuous, coref_chain)
         else:
-            mention = EntityMention(doc_id, sent_id, tokens_numbers,token_objects, mention_str, head_text,
+            mention = EntityMention(doc_id, sent_id, tokens_numbers, token_objects, mention_str, head_text,
                                     head_lemma, is_singleton, is_continuous, coref_chain, mention_type)
-        mention.probability = score  # a confidence score for predicted mentions (if used), set gold mentions prob to 1.0
+        mention.probability = score
+        # a confidence score for predicted mentions (if used), gold mentions prob is setted to 1.0 in the json file.
 
+        # 3. add Mention to Sentence
         if is_gold_mentions:
             docs[doc_id].get_sentences()[sent_id].add_gold_mention(mention, is_event)
         else:
@@ -172,25 +192,46 @@ def load_mentions_from_json(mentions_json_file: str, docs: dict, is_event: bool,
                 relaxed_match=config_dict["relaxed_match_with_gold_mention"])
 
 
-def load_gold_mentions(docs,events_json, entities_json):
-    '''
-    A function loads gold event and entity mentions
-    :param docs: set of document objects
-    :param events_json:  a JSON file contains the gold event mentions (of a specific split - train/dev/test)
-    :param entities_json: a JSON file contains the gold entity mentions (of a specific split - train/dev/test)
-    '''
-    load_mentions_from_json(events_json,docs,is_event=True, is_gold_mentions=True)
-    load_mentions_from_json(entities_json,docs,is_event=False, is_gold_mentions=True)
+def load_gold_mentions(docs: Dict[str, Document], events_json: str, entities_json: str) -> None:
+    """
+    This function loads given event and entity mentions as gold mention.
+    No return. This function add the mention info into *docs*, instead of output
+    a return value.
+
+    Example of *docs*::
+        {'XX_XXecb': Document Obj, ... }
+
+    Example of *events_json* and *entities_json*::
+        "data/interim/cybulska_setup/ECB_Train_Event_gold_mentions.json"
+
+    :param docs: A dict of Document objects of train/text/dev set.
+    :param events_json:  Path to the JSON file which contains the gold event
+    mentions of a specific split - train/dev/test
+    :param entities_json: Path to the JSON file which contains the gold entity
+    mentions of a specific split - train/dev/test
+    """
+    load_mentions_from_json(events_json, docs, is_event=True, is_gold_mentions=True)
+    load_mentions_from_json(entities_json, docs, is_event=False, is_gold_mentions=True)
 
 
-def load_predicted_mentions(docs: dict, events_json: str, entities_json: str):
-    '''
-    This function loads predicted event and entity mentions
+def load_predicted_mentions(docs: Dict[str, Document], events_json: str, entities_json: str) -> None:
+    """
+    This function loads given event and entity mentions as predicted mention.
+    No return. This function add the mention info into *docs*, instead of output
+    a return value.
 
-    :param docs: set of document objects
-    :param events_json:  path to a JSON file contains predicted event mentions (of a specific split - train/dev/test)
-    :param entities_json: path to a JSON file contains predicted entity mentions (of a specific split - train/dev/test)
-    '''
+    Example of *docs*::
+        {'XX_XXecb': Document Obj, ... }
+
+    Example of *events_json* and *entities_json*::
+        "data/interim/cybulska_setup/ECB_Train_Event_pred_mentions.json"
+
+    :param docs: A dict of document objects of train/text/dev set.
+    :param events_json:  Path to the JSON file which contains the predicted event
+    mentions of a specific split - train/dev/test
+    :param entities_json: Path to the JSON file which contains the predicted entity
+    mentions of a specific split - train/dev/test
+    """
     load_mentions_from_json(events_json, docs, is_event=True, is_gold_mentions=False)
     load_mentions_from_json(entities_json, docs, is_event=False, is_gold_mentions=False)
 
@@ -225,19 +266,45 @@ def load_predicted_data(docs: dict, pred_events_json: str, pred_entities_json: s
     load_predicted_mentions(docs, pred_events_json, pred_entities_json)
 
 
-def find_head(x):
-    '''
-    This function finds the head and head lemma of a mention x
-    :param x: A mention object
-    :return: the head word and
-    '''
+def find_head(mention_str: str) -> Tuple[str, str]:
+    """
+    This function find the root in dependency parsing of param *mention_str*.
 
-    x_parsed = nlp(x)
-    for tok in x_parsed:
-        if tok.head == tok:
-            if tok.lemma_ == u'-PRON-':
-                return tok.text, tok.text.lower()
-            return tok.text,tok.lemma_
+    The head of the root is itself. The dependency type of the root is 'ROOT'.
+    Based on those feature, we can find the root. For example::
+        >>> import spacy
+        >>> nlp = spacy.load('en')
+        >>> text = "The yellow dog eat shite."
+        >>> doc = nlp(text)
+        >>> [(i, i.head) for i in doc]
+        [(The, dog), (yellow, dog), (dog, eat), (eat, eat), (shite, eat), (., eat)]
+
+    Usually, a mention or a sentence has only one root, as the example above shows.
+    However, if your *mention_str* is long and complex, there can be more roots. For example::
+        >>> text = "The yellow dog eat shite, but the white cat eat fish."
+        >>> doc = nlp(text)
+        >>> [(i, i.head) for i in doc]
+        [(The, dog), (yellow, dog), (dog, eat), (eat, eat), (shite, eat), (,, eat), (but, eat), (the, cat), (white, cat), (cat, eat), (eat, eat), (fish, eat), (., eat)]
+        >>> [(i, i.dep_) for i in doc]
+        [(The, 'det'), (yellow, 'amod'), (dog, 'nsubj'), (eat, 'ROOT'), (shite, 'dobj'), (,, 'punct'), (but, 'cc'), (the, 'det'), (white, 'amod'), (cat, 'nsubj'), (eat, 'conj'), (fish, 'dobj'), (., 'punct')]
+    The two 'eat' are root.
+    In this case, this function find only the fist root.
+    But, this function is not designed for this case. The param *mention_str* should be a real shour mention string which has only one root.
+
+    After find the root, this function returns (text_of_root, lemma_of_root).
+    Specially, lemma of pronone is '-PRON-', for example the 'you' in 'spaCy is designed to help you do real work'.
+    In this case, this function returns (text_of_root, lower_case_of_root)
+
+    :param mention_str: A mention string.
+    :return: (text_of_root, lemma_of_root) or (text_of_root, lower_case_of_root)
+    """
+    mention = nlp(mention_str)
+    for token in mention:
+        # The token whose head is itself is the root
+        if token.head == token:  # if token.dep_ == 'ROOT'
+            if token.lemma_ == u'-PRON-':
+                return token.text, token.text.lower()
+            return token.text, token.lemma_
 
 
 def have_string_match(mention,arg_str ,arg_start, arg_end):
@@ -725,19 +792,18 @@ def main(args):
         processed data ready to use in training and inference(saved in ../processed).
     """
 
-    # 1. load tokens
-    from src.shared.classes import Document
+    # 1. load and create Document, Sentence and Token objs.
     logging.info('Training data - loading tokens')
     training_data: Dict[str, Document] = load_ECB_plus(config_dict["train_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
     logging.info('Dev data - Loading tokens')
-    dev_data = load_ECB_plus(config_dict["dev_text_file"])
+    dev_data: Dict[str, Document] = load_ECB_plus(config_dict["dev_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
     logging.info('Test data - Loading tokens')
-    test_data = load_ECB_plus(config_dict["test_text_file"])
+    test_data: Dict[str, Document] = load_ECB_plus(config_dict["test_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
 
-    # 2. load gold mention
+    # 2. load and create gold Mention objs
     logging.info('Training data - Loading gold mentions')
     load_gold_mentions(training_data,
                        config_dict["train_event_mentions"], config_dict["train_entity_mentions"])
@@ -748,13 +814,13 @@ def main(args):
     load_gold_mentions(test_data,
                        config_dict["test_event_mentions"], config_dict["test_entity_mentions"])
 
-    # 3. load predicted mention
+    # 3. load and create predicted Mention objs
     if config_dict["load_predicted_mentions"]:
         logging.info('Test data - Loading predicted mentions')
         load_predicted_mentions(test_data,
                                 config_dict["pred_event_mentions"], config_dict["pred_entity_mentions"])
 
-    # 4. order doc
+    # 4. create Corpus objs
     train_set = order_docs_by_topics(training_data)
     dev_set = order_docs_by_topics(dev_data)
     test_set = order_docs_by_topics(test_data)
@@ -781,7 +847,8 @@ def main(args):
     # 6.load srl
     if config_dict["use_srl"]:
         logging.info('Loading SRL info')
-        if config_dict["use_allen_srl"]:  # use the SRL system which is implemented in AllenNLP (currently - a deep BiLSTM model (He et al, 2017).)
+        if config_dict["use_allen_srl"]:
+            # use the SRL system which is implemented in AllenNLP (currently - a deep BiLSTM model (He et al, 2017).)
             srl_data = read_srl(config_dict["srl_output_path"])
             #
             logging.info('Training gold mentions - loading SRL info')

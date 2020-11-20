@@ -1,4 +1,4 @@
-'''只改了src的引用路径,dump中间变量'''
+'''最小改动：只改了src的引用路径,dump中间变量'''
 
 import os
 import sys
