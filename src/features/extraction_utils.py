@@ -6,23 +6,48 @@ from typing import Dict, List, Tuple, Union  # for type hinting
 # for pack in os.listdir("src"):
 #     sys.path.append(os.path.join("src", pack))
 from src.shared.classes import Corpus, Topic, Document, Sentence, Token
+from spacy.tokens import Token as spacyToken
+from spacy.tokens import Doc as spacyDoc
+from spacy.tokens import Span as spacySpan
 
 matched_args = 0
 matched_args_same_ix = 0
 matched_events = 0
 matched_events_same_ix = 0
 
-nlp = spacy.load('en')
+nlp = spacy.load('en_core_web_sm')  # en_core_web_sm 2.0.0
 
 
-def order_docs_by_topics(docs):
-    '''
+def order_docs_by_topics(docs: Dict[str, Document]) -> Corpus:
+    """
     Gets list of document objects and returns a Corpus object.
-    The Corpus object contains Document objects, ordered by their gold topics
+    The Corpus object contains Document objects which are ordered by their gold
+    topics
 
-    :param docs: list of document objects
+    The returned Corpus obj has structure likes::
+
+        普通变量是docs本来就有的信息，
+        尖括号中的变量是本函数运行后添加的信息。
+        <Courpus_obj>
+            <Corpus_obj.topics> -> Topic_obj
+        <Topic_obj>
+            <Topic_obj.docs> -> Document_obj
+        Document_obj
+            Document_obj.sentences -> Sentence_obj
+            gold/pred_event/entity_mentions -> Mention obj
+        Sentence_obj
+            Sentence_obj.tokens -> Token_obj
+        Mention_obj
+            cd/wd_coref_chain -> Coref_chain_str
+            doc_id -> Document_obj
+            sent_id -> Sentence_obj
+            tokens -> Token_obj
+        Token_obj
+            gold_event/entity_cd/wd_coref_chain -> Coref_chain_str
+
+    :param docs: dict of document objects
     :return: Corpus object
-    '''
+    """
     corpus = Corpus()
     for doc_id, doc in docs.items():
         topic_id, doc_no = doc_id.split('_')
@@ -143,22 +168,30 @@ def load_ECB_plus(processed_ecb_file: str) -> Dict[str, Document]:
     return docs
 
 
-def find_args_by_dependency_parsing(dataset, is_gold):
-    '''
-    Runs dependency parser on the split's sentences and augments the predicate-argument structures
+def find_args_by_dependency_parsing(dataset: Corpus, is_gold: bool) -> None:
+    """
+    This function:
+        1. Runs dependency parser on the split's sentences,
+        2. augments the predicate-argument structures based on the dep parse.
+
     :param dataset: an object represents the split (Corpus object)
     :param is_gold: whether to match arguments and predicates with gold or predicted mentions
-    '''
+    :return: No return.
+        the new predicate-argument structures are add into *dataset*, as what happend in *load_srl_info()*.
+    """
     global matched_args, matched_args_same_ix, matched_events,matched_events_same_ix
     matched_args = 0
     matched_args_same_ix = 0
     matched_events = 0
     matched_events_same_ix = 0
+
     for topic_id, topic in dataset.topics.items():
         for doc_id, doc in topic.docs.items():
             for sent_id, sent in doc.get_sentences().items():
+                # dep parse using spaCy
                 sent_str = sent.get_raw_sentence()
                 parsed_sent = nlp(sent_str)
+                # load predicate-argument structures from dep parse
                 findSVOs(parsed_sent=parsed_sent, sent=sent, is_gold=is_gold)
 
     print('matched events : {} '.format(matched_events))
@@ -166,12 +199,20 @@ def find_args_by_dependency_parsing(dataset, is_gold):
 
 
 def find_left_and_right_mentions(dataset, is_gold):
-    '''
-    Finds for each event in the split's its closest left and right entity mentions
-    and augments the predicate-argument structures
-    :param dataset: an object represents the split (Corpus object)
-    :param is_gold: whether to use gold or predicted mentions
-    '''
+    """
+        本函数在一些情况下，把每个event左边的entity设为event的arg0，把event右边的entity设为event的arg1.
+
+        具体来说，对*dataset*中的每个pred/gold_event（取决于is_gold参数），做如下处理：
+            1. 如果event没有arg0，找到event左边最近的那个entity，如果这个entity不是event的arg1，amloc和amtmp，那么把这个entity作为event的arg0.
+            2. 如果evnet没有arg1，找到event左边最近的那个entity，如果这个entity不是event的arg0，amloc和amtmp，那么把这个entity作为event的arg1.
+
+        :param dataset: an object represents the split (Corpus object)
+        :param is_gold: whether to match with gold or predicted mentions
+        :return: No return.
+            在符合上述具体要求的情况下，
+            *sent*[gold/pred_event_mentions][matched_event_index].arg0设为event左边的entity；
+            *sent*[gold/pred_event_mentions][matched_event_index].arg1设为event右边的entity.
+        """
     for topic_id, topic in dataset.topics.items():
         for doc_id, doc in topic.docs.items():
             for sent_id, sent in doc.get_sentences().items():
@@ -182,12 +223,16 @@ def match_subj_with_event(verb_text, verb_index, subj_text, subj_index, sent, is
     '''
     Given a verb and a subject extracted by the dependency parser , this function tries to match
     the verb with an event mention and the subject with an entity mention
+
     :param verb_text: the verb's text
     :param verb_index: the verb index in the parsed sentence
     :param subj_text: the subject's text
     :param subj_index: the subject index in the parsed sentence
     :param sent: an object represents the sentence (Sentence object)
     :param is_gold: whether to match with gold or predicted mentions
+    :return: No return.
+        *sent*[gold_event_mentions][matched_event_index].arg0/arg1/amloc/amtmp被修改为对应论元
+        *sent*[gold_entity_mentions][matched_entity_index].predicates中添加了此entity对应的谓词的id和此论元的类型A0
     '''
     event = match_event(verb_text, verb_index, sent, is_gold)
     if event is not None and event.arg0 is None:
@@ -232,6 +277,7 @@ def match_event(verb_text, verb_index, sent, is_gold):
     '''
     Given a verb extracted by the dependency parser , this function tries to match
     the verb with an event mention.
+
     :param verb_text: the verb's text
     :param verb_index: the verb index in the parsed sentence
     :param sent: an object represents the sentence (Sentence object)
@@ -258,6 +304,7 @@ def match_entity(entity_text, entity_index, sent, is_gold):
     '''
     Given an argument extracted by the dependency parser , this function tries to match
     the argument with an entity mention.
+
     :param entity_text: the argument's text
     :param entity_index: the argument index in the parsed sentence
     :param sent: an object represents the sentence (Sentence object)
@@ -283,17 +330,55 @@ def match_entity(entity_text, entity_index, sent, is_gold):
 Borrowed with modifications from https://github.com/NSchrading/intro-spacy-nlp/blob/master/subject_object_extraction.py
 '''
 
-SUBJECTS = ["nsubj"]
-PASS_SUBJ = ["nsubjpass",  "csubjpass"]
+SUBJECTS = ["nsubj"]  # 主动语态动词的名词型主语
+PASS_SUBJ = ["nsubjpass",  "csubjpass"]  # 被动语态动词的名词型主语和短语型主语
 OBJECTS = ["dobj", "iobj", "attr", "oprd"]
 
 
-def getSubsFromConjunctions(subs):
+def getSubsFromConjunctions(subs: list):
     '''
-    Finds subjects in conjunctions (and)
+    Finds subjects in conjunctions.
+
+    就是A， B and C。你给出A，我返回[B, C]
+    注意ABC是conjunct head，对New York来说，York是head。
+
+    Usage Example::
+
+        >>> import spacy
+        >>> nlp = spacy.load('en_core_web_sm')
+        >>> txt = "Tom, Jack and Thomas are boys. The two girls are Jenny as well as Diana."
+        >>> doc = nlp(txt)
+        >>> doc[0]
+        Tom
+        >>> doc[12]
+        Jenny
+        >>> getSubsFromConjunctions([doc[0]])
+        [Jack, Thomas]
+        >>> getSubsFromConjunctions([doc[0], doc[12]])
+        [Jack, Thomas, Diana]
+
+
     :param subs: found subjects so far
     :return: additional subjects, if exist
     '''
+    # 这是Barhom2019原来的算法
+    sl1 = getSubsFromConjunctions1(subs)
+    # 这是我自己写的基于dep的新算法
+    """
+    sl2 = getSubsFromConjunctions2(subs)
+    """
+
+    # 比较两个算法的不同
+    """
+    if subs:
+        if sl1 != sl2:
+            print(subs, ":::", sl1, ":::", sl2, ":::", subs[0].sent)
+    """
+
+    # 还是用Barhom的原来算法
+    return sl1
+
+def getSubsFromConjunctions1(subs: list):
     moreSubs = []
     for sub in subs:
         rights = list(sub.rights)
@@ -302,7 +387,27 @@ def getSubsFromConjunctions(subs):
             moreSubs.extend([tok for tok in rights if tok.dep_ in SUBJECTS or tok.pos_ == "NOUN"])
             if len(moreSubs) > 0:
                 moreSubs.extend(getSubsFromConjunctions(moreSubs))
+
     return moreSubs
+
+def getSubsFromConjunctions2(sub_list: List) -> List:
+    extended_sub_set = set()
+
+    for sub in sub_list:
+        rights = list(sub.rights)
+        for right in rights:
+            if right.dep_ == "conj" and right.head == sub:
+                if right not in sub_list:
+                    extended_sub_set.add(right)
+                extended_sub_set = extended_sub_set | set(getSubsFromConjunctions2([right]))
+
+    extended_sub_list = list(extended_sub_set)
+
+    def get_index(e):
+        return e.i
+    extended_sub_list.sort(key=get_index)
+
+    return extended_sub_list
 
 
 def getObjsFromConjunctions(objs):
@@ -326,19 +431,23 @@ def getObjsFromConjunctions(objs):
 def getObjsFromPrepositions(deps):
     '''
     Finds objects in prepositions
+
     :param deps: dependencies extracted by spaCy parser
     :return: objects extracted from prepositions
     '''
     objs = []
     for dep in deps:
         if dep.pos_ == "ADP" and dep.dep_ == "prep":
-            objs.extend([tok for tok in dep.rights if tok.dep_  in OBJECTS])
+            if [tok for tok in dep.rights if tok.dep_ in OBJECTS]:
+                print(1)
+            objs.extend([tok for tok in dep.rights if tok.dep_ in OBJECTS])
     return objs
 
 
 def getObjFromXComp(deps):
     '''
      Finds objects in XComp phrases (X think that [...])
+
     :param deps: dependencies extracted by spaCy parser
     :return: objects extracted from XComp phrases
     '''
@@ -353,27 +462,66 @@ def getObjFromXComp(deps):
     return None, None
 
 
-def getAllSubs(v):
-    '''
-    Finds all possible subjects of an extracted verb
+def getAllSubs(v: spacyToken) -> Tuple[List[spacyToken], List[spacyToken]]:
+    """
+    Finds all possible subjects of an extracted verb.
+
     :param v: an extracted verb
-    :return: all possible subjects of the verb
-    '''
+    :return: A tuple that includes all possible subjects of the verb.
+        First element in the tuple is a list of 给定动词（假设是主动语态）的主语.
+        Second element in the tuple is a list of 给定动词(假设是被动语态)的主语.
+    """
+    # 给定动词（假设是主动语态）的主语
     subs = [tok for tok in v.lefts if tok.dep_ in SUBJECTS and tok.pos_ != "DET"]
-    pass_subs = [tok for tok in v.lefts if tok.dep_ in PASS_SUBJ and tok.pos_ != "DET"]
+    """
+    为什么要刨除DET呢？是为了排除类似如下的情况：
+        代指：
+            "that" in "That is a good idea".
+        省略：
+            "some" in "Some is dressed in drag."（完整应为some one）
+            "another" in "two people have been killed and another wounded in a shooting."（完整应为another people）
+    """
     if len(subs) > 0:
         subs.extend(getSubsFromConjunctions(subs))
+
+    # 给定动词(假设是被动语态)的主语
+    pass_subs = [tok for tok in v.lefts if tok.dep_ in PASS_SUBJ and tok.pos_ != "DET"]
+    """
+    为什么不扩展并列结构？
+    if len(pass_subs) > 0:
+        pass_subs.extend(getSubsFromConjunctions(pass_subs))
+    """
+
+    #
     return subs, pass_subs
 
 
-def getAllObjs(v):
+def getAllObjs(v: spacyToken):
     '''
      Finds all the objects of an extracted verb
+
     :param v: an extracted verb
     :return: all possible objects of the verb
     '''
     rights = list(v.rights)
+    for i in rights:
+        if i.dep_ == "oprd":
+            print("[", i, "]", i.sent)
     objs = [tok for tok in rights if tok.dep_ in OBJECTS]
+    """
+    objs1 = [tok for tok in rights if tok.dep_ in OBJECTS and tok.pos_ != "DET"]
+    if objs != objs1:
+        print("objs:", objs, "objs1:", objs1, "[", v.sent, "]")
+    objs: [any] objs1: [] [ After telling People in October that she did n't `` need to do any of that anymore , '' `` American Pie '' actress and former travel reporter Tara Reid checked into Promises Treatment Center on Friday for an unspecified problem . ]
+    objs: [that] objs1: [] [ Los Angeles general manager Tony Reagins has sounded like a broken record saying that resigning Teixeira was his top priority , and backed that up now with an eight-year offer . ]
+    objs: [all] objs1: [] [ Now , after guiding the Colts back to the playoffs - and breaking Cam Newton's single - season passing record for a first - year player - it's safe to say Luck exceeded just about all of them . ]
+    objs: [all] objs1: [] [ Now , after guiding the Colts back to the playoffs - and breaking Cam Newton's single - season passing record for a first - year player - it's safe to say Luck exceeded just about all of them . ]
+    objs: [all] objs1: [] [ Now , after guiding the Colts back to the playoffs - and breaking Cam Newton 's single - season passing record for a first - year player - it's safe to say Luck exceeded just about all of them . ]
+    objs: [both] objs1: [] [ A fired accountant bought a shotgun the day after he lost his job , then returned to the office the following week and opened fire on his bosses , wounding both and killing a receptionist , the Associated Press reported . ]
+    objs: [that] objs1: [] [ The first of the deaths this weekend was that of a New Zealand climber who fell on Friday morning . ]
+    objs: [all] objs1: [] [ While Apple 's final keynote address at the annual MacWorld convention in San Francisco did n't contain the iPhone-related announcements many had hoped for , we were given all of the details on Apple 's latest revamp to their largest and most powerful MacBook Pro . ]
+    objs: [a] objs1: [] [ The temblor struck at 2 : 09 a . m . and was centered in Geyserville , about 20 miles north of Santa Rosa , according to the U . ]
+    """
     objs.extend(getObjsFromPrepositions(rights))
 
     potentialNewVerb, potentialNewObjs = getObjFromXComp(rights)
@@ -382,26 +530,44 @@ def getAllObjs(v):
         v = potentialNewVerb
     if len(objs) > 0:
         objs.extend(getObjsFromConjunctions(objs))
-    return v, objs
+    return objs
 
 
-def findSVOs(parsed_sent, sent, is_gold):
-    '''
-    Given a parsed sentences, the function extracts its verbs, their subjects and objects and matches
-    the verbs with event mentions, and matches the subjects and objects with entity mentions, and
-    set them as Arg0 and Arg1 respectively.
-    Finally, the function finds nominal event mentions with possesors, matches the possesor
-    with entity mention and set it as Arg0.
-    :param parsed_sent: a sentence, parsed by spaCy
-    :param sent: the original Sentence object
+def findSVOs(parsed_sent: spacyDoc, sent: Sentence, is_gold: bool) -> None:
+    """
+    Given the spaCy dep parse result of a sentences (the Doc obj), the function:
+        1. extracts its verbs, their subjects and objects,
+        2. matches the verbs with event mentions
+        3. matches the subjects and objects with entity mentions, and set them
+           as Arg0 and Arg1 respectively.
+        4. finds nominal event mentions (名词化的动词) with possesors, matches the
+           possesor with entity mention and set it as Arg0.
+
+    :param parsed_sent: a Doc obj, which includes spaCy dep parse result of a sentences (the Doc obj).
+    :param sent: a Sentence object corresponding to the sentence in *parsed_sent*
     :param is_gold: whether to match with gold or predicted mentions
-    '''
+    :return: No return.
+        the new predicate-argument structures are add into *sent*, as what happend in *load_srl_info()*.
+    """
     global matched_events, matched_events_same_ix
     global matched_args, matched_args_same_ix
+
+    # 找出所有实意动词（动词中刨去助动词，aux就是助动词）
+    """
+    本来要执行：
+    verbs = [tok for tok in parsed_sent if tok.pos_ == "VERB"]
+    因为实意动词标为VERB，助动词标为AUX，参见标签集。
+    但是因为bug：https://github.com/explosion/spaCy/issues/593
+    AUX标签从不出现，所有动词都是VERB。
+    所以需要手动补救。
+    """
     verbs = [tok for tok in parsed_sent if tok.pos_ == "VERB" and tok.dep_ != "aux"]
+
     for v in verbs:
+        #
         subs, pass_subs = getAllSubs(v)
-        v, objs = getAllObjs(v)
+        objs = getAllObjs(v)
+        #
         if len(subs) > 0 or len(objs) > 0 or len(pass_subs) > 0:
             for sub in subs:
                 match_subj_with_event(verb_text=v.orth_,
@@ -440,12 +606,20 @@ def find_nominalizations_args(parsed_sent, sent, is_gold):
 
 
 def add_left_and_right_mentions(sent, is_gold):
-    '''
-    The function finds the closest left and right entity mentions of each event mention
-     and sets them as Arg0 and Arg1, respectively.
+    """
+    本函数在一些情况下，把每个event左边的entity设为event的arg0，把event右边的entity设为event的arg1.
+
+    具体来说，对一个sent中的每个pred/gold_event（取决于is_gold参数），做如下处理：
+        1. 如果event没有arg0，找到event左边最近的那个entity，如果这个entity不是event的arg1，amloc和amtmp，那么把这个entity作为event的arg0.
+        2. 如果event没有arg1，找到event右边最近的那个entity，如果这个entity不是event的arg0，amloc和amtmp，那么把这个entity作为event的arg1.
+
     :param sent: Sentence object
     :param is_gold: whether to match with gold or predicted mentions
-    '''
+    :return: No return.
+        在符合上述具体要求的情况下，
+        *sent*[gold/pred_event_mentions][matched_event_index].arg0设为event左边的entity；
+        *sent*[gold/pred_event_mentions][matched_event_index].arg1设为event右边的entity.
+    """
     sent_events = sent.gold_event_mentions if is_gold else sent.pred_event_mentions
     for event in sent_events:
         if event.arg0 is None:

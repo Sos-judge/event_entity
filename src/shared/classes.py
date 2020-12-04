@@ -252,6 +252,7 @@ class Sentence(object):
         The match is based on an exact string match, head match or
         a boundary match (one mention contains the other mention).
         Useful in a setting that requires a match
+
         :param pred_mention: the predicted mention
         :param is_event: a flag that indicates whether the mention is an event mention or an
          entity mention

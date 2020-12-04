@@ -49,14 +49,20 @@ with open(os.path.join(args.output_path, 'build_features_config.json'), "w") as 
 
 # 配置logging
 import logging
-logging.basicConfig(
-    # 使用fileHandler,日志文件在输出路径中(test_log.txt)
-    filename=os.path.join(out_dir, "test_log.txt"),
-    filemode="w",
-    # 配置日志级别
-    level=logging.INFO
+rootLogger = logging.getLogger()
+rootLogger.setLevel(logging.DEBUG)
+streamHandler = logging.StreamHandler(stream=sys.stdout)  # sys.stderr
+streamHandler.setLevel(logging.DEBUG)
+fileHandler = logging.FileHandler(filename=os.path.join(out_dir, "features_log.txt"), mode='w', encoding='utf8')   # delay=False
+fileHandler.setLevel(logging.DEBUG)
+formatter = logging.Formatter(
+    fmt='%(asctime)s\t：%(levelname)s - %(message)s',
+    datefmt=None, style='%'
 )
-
+streamHandler.setFormatter(formatter)
+fileHandler.setFormatter(formatter)
+rootLogger.addHandler(fileHandler)
+rootLogger.addHandler(streamHandler)
 
 def load_mentions_from_json(mentions_json_file: str,
                             docs: Dict[str, Document],
@@ -331,10 +337,11 @@ def have_string_match(mention,arg_str ,arg_start, arg_end):
     return False
 
 
-def add_arg_to_event(entity, event, rel_name):
+def add_arg_to_event(entity: EntityMention, event: EventMention, rel_name: str):
     '''
     Adds the entity mention as an argument (in a specific role) of an event mention and also adds the
     event mention as predicate (in a specific role) of the entity mention
+
     :param entity: an entity mention object
     :param event: an event mention object
     :param rel_name: the specific role
@@ -356,6 +363,7 @@ def add_arg_to_event(entity, event, rel_name):
 def find_argument(rel_name, rel_tokens, matched_event, sent_entities, sent_obj, is_gold, srl_obj):
     '''
     This function matches between an argument of an event mention and an entity mention.
+
     :param rel_name: the specific role of the argument
     :param rel_tokens: the argument's tokens
     :param matched_event: the event mention
@@ -363,7 +371,7 @@ def find_argument(rel_name, rel_tokens, matched_event, sent_entities, sent_obj, 
     :param sent_obj: the object represents the sentence
     :param is_gold: whether the argument need to be matched with a gold mention or not
     :param srl_obj: an object represents the extracted SRL argument.
-    :return True if the extracted SRL argument was matched with an entity mention.
+    :return: True if the extracted SRL argument was matched with an entity mention.
     '''
     arg_start_ix = rel_tokens[0]
     if len(rel_tokens) > 1:
@@ -526,8 +534,16 @@ def match_entity_with_srl_argument(sent_entities, matched_event ,srl_arg,rel_nam
 
 def load_srl_info(dataset, srl_data, is_gold):
     '''
-    Matches between extracted predicates and event mentions and between their arguments and
-    entity mentions.
+    *srl_data* includes info of extracted predicates and arguments.
+
+    *dataset* includes event and entity mentions.
+
+    This function:
+        - Matches between extracted predicates and event mentions
+        - Matches between arguments of those predicates and entity mentions.
+        - dataset.topics[topic_id].docs[doc_id].sentences[sent_id][gold_event_mentions][matched_event_index].arg0/arg1/amloc/amtmp被修改为对应论元
+        - dataset.topics[topic_id].docs[doc_id].sentences[sent_id][gold_entity_mentions][matched_entity_index].predicates中添加了此entity对应的谓词的id和此论元的类型(A0,A1,Am-Tmp,Am=Loc)
+
     :param dataset: an object represents the spilt (train/dev/test)
     :param srl_data: a dictionary contains the predicate-argument structures
     :param is_gold: whether to match predicate-argument structures with gold mentions or with predicted mentions
@@ -536,50 +552,66 @@ def load_srl_info(dataset, srl_data, is_gold):
     unmatched_event_count = 0
     matched_args_count = 0
 
-    matched_identified_events = 0
-    matched_identified_args = 0
     for topic_id, topic in dataset.topics.items():
         for doc_id, doc in topic.docs.items():
-            for sent_id, sent in doc.get_sentences().items():
+            for sent_id, sent in doc.get_sentences().items():  # {0: Sentence_obj, 3: Sentence_obj}
                 # Handling nominalizations if we don't use dependency parsing (that already handles it)
                 if not config_dict["use_dep"]:
                     sent_str = sent.get_raw_sentence()
                     parsed_sent = nlp(sent_str)
                     find_nominalizations_args(parsed_sent, sent, is_gold)
-                sent_srl_info = {}
+
+                doc_srl = {}
+                """the srl info of cur doc"""
+                sent_srl = {}
+                """the srl info of cur sent."""
 
                 if doc_id in srl_data:
                     doc_srl = srl_data[doc_id]
                     if int(sent_id) in doc_srl:
-                        sent_srl_info = doc_srl[int(sent_id)]
+                        sent_srl = doc_srl[int(sent_id)]
                 else:
                     print('doc not in srl data - ' + doc_id)
 
-                for event_key, srl_obj in sent_srl_info.items():
-                    if is_gold:
-                        sent_events = sent.gold_event_mentions
-                        sent_entities = sent.gold_entity_mentions
-                    else:
-                        sent_events = sent.pred_event_mentions
-                        sent_entities = sent.pred_entity_mentions
+                if is_gold:
+                    sent_events = sent.gold_event_mentions
+                    sent_entities = sent.gold_entity_mentions
+                else:
+                    sent_events = sent.pred_event_mentions
+                    sent_entities = sent.pred_entity_mentions
+
+                for predicate_token_id, srl_obj in sent_srl.items():
                     event_found = False
+                    """找到predicate_token对应的那个event mention没有？"""
                     matched_event = None
+                    """那个predicate_token对应的那个event mention。"""
+
+                    # a.匹配谓词
                     for event_mention in sent_events:
-                        if event_key in event_mention.tokens_numbers:
+                        """
+                        比如check out这个谓词，
+                        在dateset中，它是一个mention，包含2个token；
+                        在srl_data中，它是谓词，但是，swirl模型只把单个token作为谓词，所以只有check这个词是谓词。
+                        """
+                        # if match
+                        if predicate_token_id in event_mention.tokens_numbers:
                             event_found = True
                             matched_event = event_mention
                             if is_gold:
                                 matched_events_count += 1
                             elif matched_event.gold_mention_id is not None:
-                                    matched_events_count += 1
+                                matched_events_count += 1
+                        # 如果匹配成功，就退出，不再继续尝试匹配
                         if event_found:
                             break
+                    if not event_found:
+                        unmatched_event_count += 1
+
+                    # b. 匹配论元
                     if event_found:
                         for rel_name, rel_tokens in srl_obj.arg_info.items():
-                            if find_argument(rel_name, rel_tokens, matched_event, sent_entities, sent, is_gold,srl_obj):
+                            if find_argument(rel_name, rel_tokens, matched_event, sent_entities, sent, is_gold, srl_obj):
                                 matched_args_count += 1
-                    else:
-                        unmatched_event_count += 1
     logging.info('SRL matched events - ' + str(matched_events_count))
     logging.info('SRL unmatched events - ' + str(unmatched_event_count))
     logging.info('SRL matched args - ' + str(matched_args_count))
@@ -793,13 +825,13 @@ def main(args):
     """
 
     # 1. load and create Document, Sentence and Token objs.
-    logging.info('Training data - loading tokens')
+    logging.info('Training data - loading and create Document, Sentence and Token objs')
     training_data: Dict[str, Document] = load_ECB_plus(config_dict["train_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
-    logging.info('Dev data - Loading tokens')
+    logging.info('Dev data - loading and create Document, Sentence and Token objs')
     dev_data: Dict[str, Document] = load_ECB_plus(config_dict["dev_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
-    logging.info('Test data - Loading tokens')
+    logging.info('Test data - loading and create Document, Sentence and Token objs')
     test_data: Dict[str, Document] = load_ECB_plus(config_dict["test_text_file"])
     """{'XX_XXecb': Document Obj, ... } """
 
@@ -820,28 +852,46 @@ def main(args):
         load_predicted_mentions(test_data,
                                 config_dict["pred_event_mentions"], config_dict["pred_entity_mentions"])
 
-    # 4. create Corpus objs
+    with open('output/train-data.pkl', 'wb') as f:
+        cPickle.dump(training_data, f)
+    with open('output/dev-data.pkl', 'wb') as f:
+        cPickle.dump(dev_data, f)
+    with open('output/test-data.pkl', 'wb') as f:
+        cPickle.dump(test_data, f)
+
+    with open('output/train-data.pkl', 'rb') as f:
+        training_data = cPickle.load(f)
+    with open('output/dev-data.pkl', 'rb') as f:
+        dev_data = cPickle.load(f)
+    with open('output/test-data.pkl', 'rb') as f:
+        test_data = cPickle.load(f)
+
+    # 4. create Topic, Corpus objs
+    logging.info('Train_set - Createing Corpus and Topic')
     train_set = order_docs_by_topics(training_data)
+    logging.info('dev_set - Createing Corpus and Topic')
     dev_set = order_docs_by_topics(dev_data)
+    logging.info('test_set - Createing Corpus and Topic')
     test_set = order_docs_by_topics(test_data)
 
     # 5. statistic number of t,d,s,em,vm in each split
+    logging.info('dataset statistic')
     write_dataset_statistics('train', train_set, check_predicted=False)
     write_dataset_statistics('dev', dev_set, check_predicted=False)
     write_dataset_statistics('test', test_set, check_predicted=config_dict["load_predicted_mentions"])
 
-    with open('output/train-base.pkl', 'wb') as f:
+    with open('output/train_set56.pkl', 'wb') as f:
         cPickle.dump(train_set, f)
-    with open('output/dev-base.pkl', 'wb') as f:
+    with open('output/dev_set56.pkl', 'wb') as f:
         cPickle.dump(dev_set, f)
-    with open('output/test-base.pkl', 'wb') as f:
+    with open('output/test_set56.pkl', 'wb') as f:
         cPickle.dump(test_set, f)
 
-    with open('output/train-base.pkl', 'rb') as f:
+    with open('output/train_set56.pkl', 'rb') as f:
         train_set = cPickle.load(f)
-    with open('output/dev-base.pkl', 'rb') as f:
+    with open('output/dev_set56.pkl', 'rb') as f:
         dev_set = cPickle.load(f)
-    with open('output/test-base.pkl', 'rb') as f:
+    with open('output/test_set56.pkl', 'rb') as f:
         test_set = cPickle.load(f)
 
     # 6.load srl
@@ -861,25 +911,10 @@ def main(args):
                 logging.info('Test predicted mentions - loading SRL info')
                 match_allen_srl_structures(test_set, srl_data, is_gold=False)
         else:  # Use SwiRL SRL system (Surdeanu et al., 2007)
+            # 把srl标注从文件中读取出来
             srl_data = parse_swirl_output(config_dict["srl_output_path"])
-            """
-            example::
-            
-                {
-                    '10_13ecbplus':{
-                        0:{},
-                        1:{},
-                        2:{
-                            2: src.shared.classes.Srl_info obj,
-                            15: src.shared.classes.Srl_info obj,
-                            ...
-                        },
-                        ...
-                    },
-                    ...
-                }    
-            """
 
+            # 把srl标注放到语料对象中
             logging.info('Training gold mentions - loading SRL info')
             load_srl_info(train_set, srl_data, is_gold=True)
             logging.info('Dev gold mentions - loading SRL info')
@@ -889,6 +924,20 @@ def main(args):
             if config_dict["load_predicted_mentions"]:
                 logging.info('Test predicted mentions - loading SRL info')
                 load_srl_info(test_set, srl_data, is_gold=False)
+
+        with open('output/train_set67.pkl', 'wb') as f:
+            cPickle.dump(train_set, f)
+        with open('output/dev_set67.pkl', 'wb') as f:
+            cPickle.dump(dev_set, f)
+        with open('output/test_set67.pkl', 'wb') as f:
+            cPickle.dump(test_set, f)
+
+        with open('output/train_set67.pkl', 'rb') as f:
+            train_set = cPickle.load(f)
+        with open('output/dev_set67.pkl', 'rb') as f:
+            dev_set = cPickle.load(f)
+        with open('output/test_set67.pkl', 'rb') as f:
+            test_set = cPickle.load(f)
 
     # 7. load depprase
     if config_dict["use_dep"]:  # use dependency parsing
@@ -903,6 +952,20 @@ def main(args):
             logging.info('Test predicted mentions - loading predicates and their arguments with dependency parser')
             find_args_by_dependency_parsing(test_set, is_gold=False)
 
+    with open('output/train_set78.pkl', 'wb') as f:
+        cPickle.dump(train_set, f)
+    with open('output/dev_set78.pkl', 'wb') as f:
+        cPickle.dump(dev_set, f)
+    with open('output/test_set78.pkl', 'wb') as f:
+        cPickle.dump(test_set, f)
+
+    with open('output/train_set78.pkl', 'rb') as f:
+        train_set = cPickle.load(f)
+    with open('output/dev_set78.pkl', 'rb') as f:
+        dev_set = cPickle.load(f)
+    with open('output/test_set78.pkl', 'rb') as f:
+        test_set = cPickle.load(f)
+
     # 8. load left_right_mentiosn
     if config_dict["use_left_right_mentions"]:  # use left and right mentions heuristic
         logging.info('Augmenting predicate-arguments structures using leftmost and rightmost entity mentions')
@@ -916,8 +979,22 @@ def main(args):
             logging.info('Test predicted mentions - loading predicates and their arguments ')
             find_left_and_right_mentions(test_set, is_gold=False)
 
+    with open('output/train_set89.pkl', 'wb') as f:
+        cPickle.dump(train_set, f)
+    with open('output/dev_set89.pkl', 'wb') as f:
+        cPickle.dump(dev_set, f)
+    with open('output/test_set89.pkl', 'wb') as f:
+        cPickle.dump(test_set, f)
+
+    with open('output/train_set89.pkl', 'rb') as f:
+        train_set = cPickle.load(f)
+    with open('output/dev_set89.pkl', 'rb') as f:
+        dev_set = cPickle.load(f)
+    with open('output/test_set89.pkl', 'rb') as f:
+        test_set = cPickle.load(f)
+
     # 9. load elmo
-    if config_dict["load_elmo"]: # load ELMo embeddings
+    if config_dict["load_elmo"]:  # load ELMo embeddings
         elmo_embedder = ElmoEmbedding(config_dict["options_file"], config_dict["weight_file"])
         logging.info("Loading ELMO embeddings...")
         load_elmo_embeddings(train_set, elmo_embedder, set_pred_mentions=False)
@@ -932,7 +1009,6 @@ def main(args):
         cPickle.dump(dev_set, f)
     with open(os.path.join(args.output_path, 'test_data'), 'wb') as f:
         cPickle.dump(test_set, f)
-
 
 if __name__ == '__main__':
     main(args)

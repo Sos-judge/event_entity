@@ -1,5 +1,5 @@
 import os
-
+from typing import Dict, List, Tuple, Union  # for type hinting
 from src.shared.classes import Srl_info
 # import sys
 # for pack in os.listdir("src"):
@@ -54,44 +54,66 @@ def parse_swirl_sent(sent_id, sent_tokens):
 
 def parse_swirl_file(xml_file_name, srl_file_path, srl_data):
     '''
-    This function gets the path to a SwiRL output file,
-    extracts the predicates and their arguments for each sentence in this document
-    and returns a dictionary in the following structure:
-    dict[key1][key2][key3] contains a Srl_info object.
-    key1 - document id
-    key2 - sent id
-    key3 - token id of an extracted event
+    This function:
+    - reads one SwiRL output files given by *srl_file_path*,
+    - extracts the predicates and their arguments for each semantic role,
+    - add those extracted srl info into *srl_data*.
 
     :param xml_file_name: name of the input file of SwiRL, (name of the xml file in ecb+)
     :param srl_file_path: path to the output file of SwiRL
-    :param srl_data: A dict that saves srl info of many files. The extracted srl
-     info of this file will be save into this dict also.
+    :param srl_data: A dict that saves srl info.
+        This dict is used as return value.
+        srl_data[doc_id][sent_id][predicted_token_id] = Srl_info object.
     '''
-    srl_file = open(srl_file_path, 'r')
-    xml_file_mainname = xml_file_name.split('.')[0]
-    srl_data[xml_file_mainname] = {}
+    doc_id = xml_file_name.split('.')[0]  # xml_file_name="1_1ecb.xml"  doc_id="1_1ecb"
+    """xml_file_mainname equals to the doc_id of corresponding Document obj."""
+    srl_data[doc_id] = {}
+
     sent_id = 0
-    sent_tokens = []
-    for line in srl_file:
-        temp_line = line.strip().split()
-        if not temp_line:
-            srl_data[xml_file_mainname][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
-            sent_id += 1
-            sent_tokens = []
+    sent_tokenlist = []
+    srl_file = open(srl_file_path, 'r')
+    for token_line in srl_file:
+        token_line = token_line.strip().split()
+        if token_line:
+            sent_tokenlist.append(token_line)
         else:
-            sent_tokens.append(temp_line)
+            srl_data[doc_id][sent_id] = parse_swirl_sent(sent_id, sent_tokenlist)
+            sent_id += 1
+            sent_tokenlist = []
     # parse the last sentence
-    srl_data[xml_file_mainname][sent_id] = parse_swirl_sent(sent_id, sent_tokens)
+    srl_data[doc_id][sent_id] = parse_swirl_sent(sent_id, sent_tokenlist)
     srl_file.close()
 
 
-def parse_swirl_output(srl_folder_path):
+def parse_swirl_output(srl_folder_path: str) -> Dict[str, Dict[int, Dict[int, Srl_info]]]:
     '''
-    This function gets the path to the output files of SwiRL and parse
-    each output file
+    This function reads all SwiRL output files into a return srl dict.
+    This function:
+    - reads one SwiRL all SwiRL output files given by *srl_folder_path*,
+    - extracts the predicates and their arguments for each semantic role,
+    - return the extracted srl info in a dict.
+
+    The return dict likes: return[doc_id][sent_id] [predicted_token_id]=Srl_info obj.
+    A predicted can include multi tokens, predicate_token_id is the id of the first
+    token in the predicate.
+    For example::
+
+        return = {
+            '10_13ecbplus':{
+                0:{},
+                1:{},
+                2:{
+                    2: src.shared.classes.Srl_info obj,
+                    15: src.shared.classes.Srl_info obj,
+                    ...
+                },
+                ...
+            },
+            ...
+        }
 
     :param srl_folder_path: the path to the folder which includes the output files of SwiRL
-    :return: a dictionary (see the previous function's documentation)
+    :return: a dictionary like: dict[doc_id][sent_id][token_id] = Srl_info object.
     '''
     srl_data = {}
     srl_file_name_list = os.listdir(srl_folder_path)
