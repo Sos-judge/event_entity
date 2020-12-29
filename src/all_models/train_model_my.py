@@ -17,18 +17,15 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from spacy.lang.en import English
-from breakpointAlarm.breakpointAlarm import alarm
-
-# for pack in os.listdir("src"):
-#     sys.path.append(os.path.join("src", pack))
-sys.path.append("./src/shared/")
-from classes import *
-# from src.shared.eval_utils import *
+# from breakpointAlarm.breakpointAlarm import alarm
+from typing import Dict, List, Tuple, Union  # for type hinting
+from src.shared.classes import Corpus, Topic, Document, Sentence, Mention, EventMention, EntityMention, Token, Srl_info, Cluster
+from src.shared.eval_utils import *
 from src.all_models.model_utils import *
-from src.all_models.model_factory import \
-    factory_load_embeddings, create_model, create_optimizer, create_loss
+from src.all_models.model_factory import factory_load_embeddings, create_model, create_optimizer, create_loss
 
 
+# parse the arguments in command
 parser = argparse.ArgumentParser(description='Training a regressor')
 parser.add_argument('--config_path', type=str,
                     help=' The path configuration json file')
@@ -36,12 +33,27 @@ parser.add_argument('--out_dir', type=str,
                     help=' The directory to the output folder')
 args = parser.parse_args()
 
+# make the output dir
 out_dir = args.out_dir
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
-logging.basicConfig(filename=os.path.join(args.out_dir, "train_log.txt"),
-                    level=logging.DEBUG, filemode='w')
+# 配置logging
+import logging
+rootLogger = logging.getLogger()
+rootLogger.setLevel(logging.DEBUG)
+streamHandler = logging.StreamHandler(stream=sys.stdout)  # sys.stderr
+streamHandler.setLevel(logging.DEBUG)
+fileHandler = logging.FileHandler(filename=os.path.join(out_dir, "train_model.log"), mode='w', encoding='utf8')   # delay=False
+fileHandler.setLevel(logging.DEBUG)
+formatter = logging.Formatter(
+    fmt='%(asctime)s\t：%(levelname)s - %(message)s',
+    datefmt=None, style='%'
+)
+streamHandler.setFormatter(formatter)
+fileHandler.setFormatter(formatter)
+rootLogger.addHandler(fileHandler)
+rootLogger.addHandler(streamHandler)
 
 # Load json config file
 with open(args.config_path, 'r') as js_file:
@@ -67,27 +79,31 @@ if args.use_cuda:
     print('Training with CUDA')
 
 
-def train_model(train_set, dev_set):
-    '''
-    Initializes models, optimizers and loss functions, then, it runs the training procedure that
-    alternates between entity and event training and clustering on the train set.
-    After each epoch, it runs the inference procedure on the dev set and calculates
-    the B-cubed measure and use it to tune the model and its hyper-parameters.
-    Saves the entity and event models that achieved the best B-cubed scores on the dev set.
+def train_model(train_set: Corpus, dev_set: Corpus) -> None:
+    """
+    This function:
+        1. Initializes models, optimizers and loss functions,
+        2. Then, it runs the training procedure that alternates between entity and
+           event training and clustering on the train set.
+        3. After each epoch, it runs the inference procedure on the dev set and
+           calculates the B-cubed measure and use it to tune the model and its
+           hyper-parameters.
+        4. Saves the entity and event models that achieved the best B-cubed scores on the dev set.
 
-    :param train_set: a Corpus object, representing the train set.
-    :param dev_set: a Corpus object, representing the dev set.
-    '''
-    device = torch.device("cuda:0" if args.use_cuda else "cpu")
+    :param train_set: The train set.
+    :param dev_set: The dev set.
+    :return: No return. The entity and event models that achieved the best B-cubed scores on the dev set are saved.
+    """
 
     # loads predicted WD entity coref chains from external tool
     doc_to_entity_mentions = load_entity_wd_clusters(config_dict)
 
-    print('Create new models...')
-    logging.info('Create new models...')
-
     # loading pre-trained embeddings before creating new models
     factory_load_embeddings(config_dict)
+
+    # create model
+    logging.info('Create model')
+    device = torch.device("cuda:0" if args.use_cuda else "cpu")
 
     cd_event_model = create_model(config_dict)
     cd_event_model = cd_event_model.to(device)
@@ -95,13 +111,17 @@ def train_model(train_set, dev_set):
     cd_entity_model = create_model(config_dict)
     cd_entity_model = cd_entity_model.to(device)
 
+    # create optimizer
+    logging.info('Create optimizer')
     cd_event_optimizer = create_optimizer(config_dict, cd_event_model)
     cd_entity_optimizer = create_optimizer(config_dict, cd_entity_model)
 
+    # create loss function
+    logging.info('Create loss function')
     cd_event_loss = create_loss(config_dict)
     cd_entity_loss = create_loss(config_dict)
 
-    topics = train_set.topics  # Use the gold sub-topics
+    topics: Dict[str, Topic] = train_set.topics  # Use the gold sub-topics
     """
     topic dict of train set. ::
     
@@ -117,13 +137,12 @@ def train_model(train_set, dev_set):
     best_entity_epoch = 0
     patient_counter = 0
     orig_event_th = config_dict["event_merge_threshold"]
-    """    original value of config_dict["event_merge_threshold"]    """
+    """ original value of config_dict["event_merge_threshold"]    """
     orig_entity_th = config_dict["entity_merge_threshold"]
-    """    original value of config_dict["entity_merge_threshold"]    """
+    """ original value of config_dict["entity_merge_threshold"]    """
 
     for epoch in range(1, config_dict["epochs"]):  # run the whole data set *epoch* times
         logging.info('Epoch {}:'.format(str(epoch)))
-        print('Epoch {}:'.format(str(epoch)))
 
         topics_keys = list(topics.keys())  # ['1_ecb', '3_ecb', '4_ecb', '6_ecb', '7_ecb',...]
         random.shuffle(topics_keys)
@@ -140,13 +159,13 @@ def train_model(train_set, dev_set):
             logging.info('Topic {}:'.format(topic_id))
             print('Topic {}:'.format(topic_id))
 
-            # 1.1. initialize golden event and entity mention
+            # 1.1. extract golden event and entity mention
             event_mentions, entity_mentions = topic_to_mention_list(topic, is_gold=True)
 
             # 1.2. initialize entity cluster
             if 1:
-                entity_clusters = []
-                """ entity Cluster list.  """
+                entity_clusters: List[Cluster] = []
+                """ entity cluster list. """
                 # strategy 1: initial entity clusters = singleton clusters.
                 if 0:  # we don't use this strategy.
                     entity_clusters = mention_list_to_singleton_cluster_list(entity_mentions, is_event=False)
@@ -420,6 +439,26 @@ def load_training_checkpoint(model, optimizer, filename, device):
     return model, optimizer, start_epoch, best_f1
 
 
+def load_train_set_and_dev_set(train_path: str, dev_path: str) -> Tuple[Corpus, Corpus]:
+    """
+    Read pkl file of training set and dev set, return Corpus objs.
+
+    :param train_path: The path to a strining set pkl file.
+        e.g. 'data/processed/cybulska_setup/full_swirl_ecb/training_data'
+    :param dev_path: The path to a dev set pkl file.
+        e.g. 'data/processed/cybulska_setup/full_swirl_ecb/dev_data'
+    :return: Corpus obj of training set and dev set.
+    """
+    logging.info('Loading training data...')
+    with open(train_path, 'rb') as f:
+        training_data: Corpus = cPickle.load(f)  # src.shared.classes.Corpus object
+    logging.info('Loading training and dev data...')
+    with open(dev_path, 'rb') as f:
+        dev_data: Corpus = cPickle.load(f)  # src.shared.classes.Corpus object
+    logging.info('Training and dev data have been loaded.')
+    return training_data, dev_data
+
+
 def main():
     '''
     This script loads the train and dev sets, initializes models, optimizers and loss functions,
@@ -430,14 +469,7 @@ def main():
     Finally, it saves the entity and event models that achieved the best B-cubed scores
     on the dev set.
     '''
-    logging.info('Loading training and dev data...')
-    with open(config_dict["train_path"], 'rb') as f:
-        training_data = cPickle.load(f)  # src.shared.classes.Corpus object
-    with open(config_dict["dev_path"], 'rb') as f:
-        dev_data = cPickle.load(f)  # src.shared.classes.Corpus object
-
-    logging.info('Training and dev data have been loaded.')
-
+    (training_data, dev_data) = load_train_set_and_dev_set(config_dict["train_path"], config_dict["dev_path"])
     train_model(training_data, dev_data)
 
 

@@ -2,12 +2,20 @@ import torch.nn as nn
 import torch.optim as optim
 import logging
 import numpy as np
+from typing import Dict, List, Tuple, Union  # for type hinting
 
 from src.all_models.models import CDCorefScorer
-from src.all_models.model_utils import loadGloVe,load_embeddings, load_one_hot_char_embeddings
+from src.all_models.model_utils import loadGloveWordEmbedding,loadGloveCharEmbeddings, load_one_hot_char_embeddings
 
-word_embeds = None
+word_embeds: np.ndarray = None
+"""
+A array with size(|V|, |w|).
+|v| is the length of vocabulary.
+|w| is the length of word embedding and is 300 by default beacause we use glove.6B.300d.txt by default.
+The element word_embeds[i] is the word embedding of the i-th word in vocabulary. 
+"""
 word_to_ix = None
+
 char_embeds = None
 char_to_ix = None
 
@@ -33,10 +41,11 @@ def factory_load_embeddings(config_dict):
     word_embeds, word_to_ix, char_embeds, char_to_ix = load_model_embeddings(config_dict)
 
 
-def create_model(config_dict):
+def create_model(config_dict: Dict):
     '''
     Given a configuration dictionary, containing flags for configuring the current experiment,
     this function creates a model according to those flags and returns that model.
+
     :param config_dict: a configuration dictionary
     :return: an initialized model - src.all_models.CDCorefScorer object
     '''
@@ -140,32 +149,35 @@ def load_model_embeddings(config_dict: dict) -> tuple:
 
     '''
     logging.info('Loading word embeddings...')
-    # load pre-trained word embeddings
-    vocab, embd = loadGloVe(config_dict["glove_path"])
-    word_embeds = np.asarray(embd, dtype=np.float64)
+    # load glove word embeddings
+    word_vocab, word_embds = loadGloveWordEmbedding(config_dict["glove_path"])
+    word_embeds = np.asarray(word_embds, dtype=np.float64)
     i = 0
     word_to_ix = {}
-    for word in vocab:
+    for word in word_vocab:
         if word in word_to_ix:
-            continue
+           print("warning: word %s occurs multi times in word vocab.")
         word_to_ix[word] = i
         i += 1
     logging.info('Word embeddings have been loaded.')
-
+    # load glove char embeddings
     if config_dict["use_pretrained_char"]:
         logging.info('Loading pre-trained char embeddings...')
-        char_embeds, vocab = load_embeddings(config_dict["char_pretrained_path"],
-                                             config_dict["char_vocab_path"])
+        char_embeds, char_vocab = loadGloveCharEmbeddings(config_dict["char_pretrained_path"],
+                                                          config_dict["char_vocab_path"])
         char_to_ix = {}
-        for char in vocab:
+        for char in char_vocab:
             char_to_ix[char] = len(char_to_ix)
+        # add special char " "
         char_to_ix[' '] = len(char_to_ix)
         space_vec = np.zeros((1, char_embeds.shape[1]))
         char_embeds = np.append(char_embeds, space_vec, axis=0)
+        # add special char "<UNK>"
         char_to_ix['<UNK>'] = len(char_to_ix)
         unk_vec = np.random.rand(1, char_embeds.shape[1])
         char_embeds = np.append(char_embeds, unk_vec, axis=0)
         logging.info('Char embeddings have been loaded.')
+    # load one-hot char embeddings
     else:
         logging.info('Loading one-hot char embeddings...')
         char_embeds, char_to_ix = load_one_hot_char_embeddings(config_dict["char_vocab_path"])

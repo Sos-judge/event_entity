@@ -11,8 +11,9 @@ from scorer import *
 from src.shared.eval_utils import *
 import _pickle as cPickle
 from src.all_models.bcubed_scorer import *
+from typing import Dict, List, Tuple, Union  # for type hinting
 from src.shared.classes import *
-
+from src.shared.classes import Corpus, Topic, Document, Sentence, Mention, EventMention, EntityMention, Token, Srl_info, Cluster
 # import matplotlib.pyplot as plt
 # import spacy
 # from spacy.lang.en import English
@@ -114,15 +115,15 @@ def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
     return new_topics
 
 
-def topic_to_mention_list(topic: Topic, is_gold: bool) -> tuple:
-    '''
+def topic_to_mention_list(topic: Topic, is_gold: bool) -> Tuple[List[EventMention], List[EntityMention]]:
+    """
     抽取topic中的gold mention或predicted mention(取决于is_gold参数),并组成列表返回。
 
     :param topic: a Topic object
     :param is_gold: a flag that denotes whether to extract gold mention or predicted mentions
     :return: (gold event mention list, gold entity mention list)或(predicted event mention list, predicted
      entity mention list)
-    '''
+    """
     event_mentions = []
     entity_mentions = []
     for doc_id, doc in topic.docs.items():  # 遍历每个doc
@@ -137,7 +138,7 @@ def topic_to_mention_list(topic: Topic, is_gold: bool) -> tuple:
     return event_mentions, entity_mentions
 
 
-def load_entity_wd_clusters(config_dict):
+def load_entity_wd_clusters(config_dict: Dict) -> Dict[str, Dict]:
     '''
     Loads from a file the within-document (WD) entity coreference clusters predicted by an external WD entity coreference
     model/tool and ordered those clusters in a dictionary according to their documents.其实就是根据配置读取外部WD实体共指
@@ -340,7 +341,7 @@ def init_cd(mention_list, is_event):
 mention_list_to_singleton_cluster_list = init_cd
 
 
-def load_embeddings(embed_path, vocab_path):
+def loadGloveCharEmbeddings(embed_path, vocab_path):
     '''
     load embeddings from a binary file and a file contains the vocabulary.
     :param embed_path: path to the embeddings' binary file
@@ -599,27 +600,28 @@ def calc_q(cluster_1, cluster_2):
     return true_pairs/float(true_pairs + false_pairs)
 
 
-def loadGloVe(glove_filename):
+def loadGloveWordEmbedding(glove_filename: str) -> Tuple[List, List]:
     '''
     Loads Glove word vectors.
+
     :param glove_filename: Glove file
     :return: vocab - list contains the vocabulary ,embd - list of word vectors
     '''
+    #
     vocab = []
     embd = []
-    file = open(glove_filename,'r')
-    for line in file.readlines():
-        row = line.strip().split(' ')
-        if len(row) > 1:
-            if row[0] != '':
-                vocab.append(row[0])
-                embd.append(row[1:])
-                if len(row[1:]) != 300:
-                    print(len(row[1:]))
-    print('Loaded GloVe!')
-    file.close()
-
-    return vocab,embd
+    #
+    with open(glove_filename, 'r', encoding='utf-8') as file:
+        for line in file.readlines():
+            row = line.strip().split(' ')
+            if len(row) > 1:
+                if row[0] != '':
+                    vocab.append(row[0])
+                    embd.append(row[1:])
+                    if len(row[1:]) != 300:
+                        print("warning: len of embedding of word %s is not 300." % (vocab[-1]))
+    #
+    return vocab, embd
 
 
 def get_sub_topics(doc_id):
@@ -725,16 +727,15 @@ def create_gold_clusters(mentions):
     return wd_clusters
 
 
-def create_gold_wd_clusters_organized_by_doc(mention_list, is_event):
-    """Mention list -> Cluster dict(by doc and gold WD coref cluster)
+def create_gold_wd_clusters_organized_by_doc(mention_list: List[Mention], is_event: bool) -> Dict[str, List[Cluster]]:
+    """
+    This function:
+        1. extract gold wd coref clusters from mention list.
+        2. The extracted clusters make up a dict by doc_id. Return the dict.
 
-    example::
-        Mention list = [Mention, ...] (Mention has doc and gold WD coref info)
-        Cluster list[doc id] = [Cluster, ...] (this Cluster is gold WD coref cluster)
-
-    :param mention_list: Mentions list (event or entity mention).
-    :param is_event: event mention of entity mention
-    :return: Cluster dict.
+    :param mention_list: Event mentions list or entity metions list. Note that Mention obj has doc and gold WD coref info.
+    :param is_event: The mention in *mention_list* is event mention or entity mention.
+    :return: Dict{doc_id: [Cluster_obj_in_cur_doc, ...], ...}.(this Cluster is gold WD coref cluster)
     """
 
     # Mention list -> Mention dict
@@ -765,11 +766,14 @@ def create_gold_wd_clusters_organized_by_doc(mention_list, is_event):
 mention_list_to_gold_wd_cluster_dict = create_gold_wd_clusters_organized_by_doc
 
 
-def mention_list_to_gold_wd_cluster_list(mention_list, is_event):
-    mention_dict = mention_list_to_gold_wd_cluster_dict(mention_list, is_event)
+def mention_list_to_gold_wd_cluster_list(mention_list: List[Mention], is_event: bool):
+    # get cluster dict
+    cluster_dict = mention_list_to_gold_wd_cluster_dict(mention_list, is_event)
+    # transfer cluster dict into cluster list
     cluster_list = []
-    for doc_id, clusters in mention_dict.items():
-        cluster_list.extend(clusters)
+    for cur_doc_id, cur_doc_cluster_list in cluster_dict.items():
+        cluster_list.extend(cur_doc_cluster_list)
+    #
     return cluster_list
 
 def write_event_coref_results(corpus, out_dir, config_dict):
@@ -810,11 +814,12 @@ def write_entity_coref_results(corpus, out_dir,config_dict):
         src.shared.eval_utils.write_mention_based_wd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
 
 
-def create_event_cluster_bow_lexical_vec(event_cluster,model, device, use_char_embeds,
+def create_event_cluster_bow_lexical_vec(event_cluster, model, device, use_char_embeds,
                                          requires_grad):
     '''
     Creates the semantically-dependent vector of a specific event cluster
     (average of mention's span vectors in the cluster)
+
     :param event_cluster: event cluster
     :param model: CDCorefScorer model
     :param device: Pytorch device (gpu/cpu)
@@ -825,11 +830,15 @@ def create_event_cluster_bow_lexical_vec(event_cluster,model, device, use_char_e
     (average of mention's span vectors in the cluster)
     '''
     if use_char_embeds:
-        bow_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                              requires_grad=requires_grad).to(device).view(1, -1)
+        bow_vec = torch.zeros(
+            model.embedding_dim + model.char_hidden_dim,
+            requires_grad=requires_grad
+        ).to(device).view(1, -1)
     else:
-        bow_vec = torch.zeros(model.embedding_dim ,
-                              requires_grad=requires_grad).to(device).view(1, -1)
+        bow_vec = torch.zeros(
+            model.embedding_dim,
+            requires_grad=requires_grad
+        ).to(device).view(1, -1)
     for event_mention in event_cluster.mentions.values():
         # creating lexical vector using the head word of each event mention in the cluster
         head = event_mention.mention_head
@@ -978,7 +987,7 @@ def create_entity_cluster_bow_predicate_vec(entity_cluster, event_clusters, mode
                 entity_mention.loc_vec = pred_vec.to(device)
 
 
-def update_lexical_vectors(clusters, model, device ,is_event, requires_grad):
+def update_lexical_vectors(clusters: List[Cluster], model, device,is_event, requires_grad):
     '''
     Updates for each cluster its average vector of all mentions' span representations
     (Used to form the semantically-dependent vectors)
@@ -1002,7 +1011,6 @@ def update_lexical_vectors(clusters, model, device ,is_event, requires_grad):
             lex_vec = create_entity_cluster_bow_lexical_vec(cluster, model, device,
                                                             use_char_embeds=True,
                                                             requires_grad=requires_grad)
-
         cluster.lex_vec = lex_vec
 
 

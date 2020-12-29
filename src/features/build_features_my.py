@@ -19,9 +19,6 @@ from src.features.swirl_parsing import parse_swirl_output
 from src.features.allen_srl_reader import read_srl
 from src.features.create_elmo_embeddings import *
 from src.features.extraction_utils import *
-# for pack in os.listdir("src"):
-#     sys.path.append(os.path.join("src", pack))
-# sys.path.append("/src/shared/")
 
 # spaCy使用了预训练模型“en”
 nlp = spacy.load('en')
@@ -1003,9 +1000,9 @@ def main(args):
 
     # 10.
     logging.info('Storing processed data...')
-    with open(os.path.join(args.output_path,'training_data'), 'wb') as f:
+    with open(os.path.join(args.output_path, 'training_data'), 'wb') as f:
         cPickle.dump(train_set, f)
-    with open(os.path.join(args.output_path,'dev_data'), 'wb') as f:
+    with open(os.path.join(args.output_path, 'dev_data'), 'wb') as f:
         cPickle.dump(dev_set, f)
     with open(os.path.join(args.output_path, 'test_data'), 'wb') as f:
         cPickle.dump(test_set, f)
