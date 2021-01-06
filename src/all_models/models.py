@@ -2,6 +2,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+from typing import Dict, List, Tuple, Union  # for type hinting
 # import torch.autograd as autograd
 # import src.all_models.model_utils
 
@@ -11,60 +13,78 @@ class CDCorefScorer(nn.Module):
     An abstract class represents a coreference pairwise scorer.
     Inherits Pytorch's Module class.
     '''
-    def __init__(
-        self, word_embeds, word_to_ix, vocab_size, char_embedding, char_to_ix, char_rep_size,
-        dims, use_mult, use_diff, feature_size
-    ):
-        '''
-        C'tor for CorefScorer object
-        :param word_embeds: pre-trained word embeddings
-        :param word_to_ix: a mapping between a word (string) to
-        its index in the word embeddings' lookup table
-        :param vocab_size:  the vocabulary size
-        :param char_embedding: initial character embeddings
-        :param char_to_ix:  mapping between a character to
-        its index in the character embeddings' lookup table
-        :param char_rep_size: hidden size of the character LSTM
-        :param dims: list holds the layer dimensions
-        :param use_mult: a boolean indicates whether to use element-wise multiplication in the
-        input layer
-        :param use_diff: a boolean indicates whether to use element-wise differentiation in the
-        input layer
+    def __init__(self,
+                 word_embeds: np.ndarray, word_to_ix: Dict[str, int], vocab_size: int,
+                 char_embeds, char_to_ix, char_rep_size, dims, use_mult, use_diff, feature_size
+                 ):
+        """
+        init for CorefScorer object
+
+        :param word_embeds: Word embeddings.
+            It is an array with size(|V|, |w|).
+            |v| is the length of vocabulary.
+            |w| is the length of word embedding and is 300 by default beacause we use glove.6B.300d.txt by default.
+            The element word_embeds[i] is the word embedding of the i-th word in vocabulary.
+        :param word_to_ix: A lookup dict of word_embeds.
+            Key is each word in vocabulary.
+            Value is the index of this word's embedding in word_embeds.
+            So, word_embeds[word_to_ix["cat"]] is the embedding of word "cat".
+        :param vocab_size:  The vocabulary size, that is word_embeds.shape[0].
+        :param char_embeds: Char embeddings
+            It is an array with size(96, 300).
+            96: There are 94 chars in Glove char embeddings file and 2 more special char.
+            300: The length of word embedding. It is 300 by default beacause we use glove.6B.300d.txt by default.
+            The element char_embeds[i] is the char embedding of the i-th char in vocabulary.
+        :param char_to_ix: A lookup dict of char_embedding.
+            Key is each char in vocabulary.
+            Value is the index of this char's embedding in word_embeds.
+            So, char_embeds[char_to_ix["$"]] is the embedding of char "$".
+            Length is 96: There are 94 chars in Glove char embeddings file and 2 more special char.
+        :param char_rep_size: Hidden size of the character LSTM
+        :param dims: A list that holds the layer dimensions
+        :param use_mult: a boolean indicates whether to use element-wise multiplication in the input layer
+        :param use_diff: a boolean indicates whether to use element-wise differentiation in the input layer
         :param feature_size: embeddings size of binary features
-
-
-        '''
+        """
         super(CDCorefScorer, self).__init__()
-        self.embed = nn.Embedding(vocab_size, word_embeds.shape[1])
+        # length of embedding
+        self.word_embed_dim = word_embeds.shape[1]
+        self.char_embed_dim = char_embeds.shape[1]
+        """LSTF的输入向量的长度"""
+        self.char_hidden_dim = char_rep_size
+        """LSTF的输出向量的长度"""
 
-        self.embed.weight.data.copy_(torch.from_numpy(word_embeds))
-        self.embed.weight.requires_grad = False  # pre-trained word embeddings are fixed
+        # word embedding layer
+        self.word_embed_layer = nn.Embedding(vocab_size, self.word_embed_dim)
+        self.word_embed_layer.weight.data.copy_(torch.from_numpy(word_embeds))
+        self.word_embed_layer.weight.requires_grad = False  # pre-trained word embeddings are fixed
         self.word_to_ix = word_to_ix
 
-        self.char_embeddings = nn.Embedding(len(char_to_ix.keys()), char_embedding.shape[1])
-        self.char_embeddings.weight.data.copy_(torch.from_numpy(char_embedding))
-        self.char_embeddings.weight.requires_grad = True
+        # char embedding layer
+        self.char_embed_layer = nn.Embedding(len(char_to_ix.keys()), self.word_embed_dim)
+        self.char_embed_layer.weight.data.copy_(torch.from_numpy(char_embeds))
+        self.char_embed_layer.weight.requires_grad = True
         self.char_to_ix = char_to_ix
-        self.embedding_dim = word_embeds.shape[1]
-        self.char_hidden_dim = char_rep_size
 
-        self.char_lstm = nn.LSTM(input_size=char_embedding.shape[1], hidden_size=self.char_hidden_dim, num_layers=1,
-                                 bidirectional=False)
+        # char LSTM layer
+        self.char_lstm_layer = nn.LSTM(input_size=self.char_embed_dim, hidden_size=self.char_hidden_dim, num_layers=1,
+                                       bidirectional=False)
 
         # binary features for coreferring arguments/predicates
         self.coref_role_embeds = nn.Embedding(2, feature_size)
 
-        self.use_mult = use_mult
-        self.use_diff = use_diff
+        # Linear layers
         self.input_dim = dims[0]
         self.hidden_dim_1 = dims[1]
         self.hidden_dim_2 = dims[2]
         self.out_dim = 1
-
         self.hidden_layer_1 = nn.Linear(self.input_dim, self.hidden_dim_1)
         self.hidden_layer_2 = nn.Linear(self.hidden_dim_1, self.hidden_dim_2)
         self.out_layer = nn.Linear(self.hidden_dim_2, self.out_dim)
 
+        # other flags
+        self.use_mult = use_mult
+        self.use_diff = use_diff
         self.model_type = 'CD_scorer'
 
     def forward(self, clusters_pair_tensor):
@@ -100,8 +120,8 @@ class CDCorefScorer(nn.Module):
         '''
         char_hidden = self.init_char_hidden(device)
         input_char_seq = self.prepare_chars_seq(seq, device)
-        char_embeds = self.char_embeddings(input_char_seq).view(len(seq), 1, -1)
-        char_lstm_out, char_hidden = self.char_lstm(char_embeds, char_hidden)
+        char_embeds = self.char_embed_layer(input_char_seq).view(len(seq), 1, -1)
+        char_lstm_out, char_hidden = self.char_lstm_layer(char_embeds, char_hidden)
         char_vec = char_lstm_out[-1]
 
         return char_vec

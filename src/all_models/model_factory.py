@@ -3,21 +3,8 @@ import torch.optim as optim
 import logging
 import numpy as np
 from typing import Dict, List, Tuple, Union  # for type hinting
-
 from src.all_models.models import CDCorefScorer
 from src.all_models.model_utils import loadGloveWordEmbedding,loadGloveCharEmbeddings, load_one_hot_char_embeddings
-
-word_embeds: np.ndarray = None
-"""
-A array with size(|V|, |w|).
-|v| is the length of vocabulary.
-|w| is the length of word embedding and is 300 by default beacause we use glove.6B.300d.txt by default.
-The element word_embeds[i] is the word embedding of the i-th word in vocabulary. 
-"""
-word_to_ix = None
-
-char_embeds = None
-char_to_ix = None
 
 '''
 All functions in this script requires a configuration dictionary which contains flags and 
@@ -26,19 +13,24 @@ In this project, the configuration dictionaries are stored as JSON files (e.g. t
 and are loaded before the training/inference starts.
 '''
 
-
-def factory_load_embeddings(config_dict):
-    '''
-    Given a configuration dictionary, containing the paths to the embeddings files,
-    this function loads the initial character embeddings and pre-trained word embeddings.
-    and save it into global variables: ord_embeds, word_to_ix, char_embeds, char_to_ix
-
-    :param config_dict: s configuration dictionary
-    :return: no return, but set global variables: ord_embeds, word_to_ix, char_embeds,
-     char_to_ix
-    '''
-    global word_embeds, word_to_ix, char_embeds, char_to_ix
-    word_embeds, word_to_ix, char_embeds, char_to_ix = load_model_embeddings(config_dict)
+# global variables
+word_embeds: np.ndarray = None
+"""
+A array with size(|V|, |w|).
+|v| is the length of vocabulary.
+|w| is the length of word embedding and is 300 by default beacause we use glove.6B.300d.txt by default.
+The element word_embeds[i] is the word embedding of the i-th word in vocabulary. 
+"""
+word_to_ix: Dict[str, int] = None
+"""
+key is each word in vocabulary.
+value is the index of this word's embedding in word_embeds.
+So, word_embeds[word_to_ix["cat"]] is the embedding of word "cat". 
+"""
+char_embeds: np.ndarray = None
+"""same to word_embeds"""
+char_to_ix: Dict[str, int] = None
+"""same to word_to_ix"""
 
 
 def create_model(config_dict: Dict):
@@ -69,7 +61,7 @@ def create_model(config_dict: Dict):
     model_dims = [input_dim, second_dim, third_dim]
 
     model = CDCorefScorer(word_embeds, word_to_ix, word_embeds.shape[0],
-                          char_embedding=char_embeds, char_to_ix=char_to_ix,
+                          char_embeds=char_embeds, char_to_ix=char_to_ix,
                           char_rep_size=config_dict["char_rep_size"],
                           dims=model_dims,
                           use_mult=config_dict["use_mult"],
@@ -124,32 +116,29 @@ def create_loss(config_dict):
     return loss_function
 
 
-def load_model_embeddings(config_dict: dict) -> tuple:
-    '''
-    Given a configuration dictionary like::
-
-        {
-            "glove_path":,
-            "use_pretrained_char":,
-            "char_pretrained_path":,
-            "char_vocab_path":
-        }
-
-    * this function loads pre-trained word embeddings based on config_dict["glove_path"],
+def load_model_embeddings(config_dict: dict) -> None:
+    """
+    * this function loads Glove word embeddings file from the path *config_dict["glove_path"]*,
       and save the word embeddings into global variable **word_embeds**, **word_to_ix**.
 
-    * If config_dict["use_pretrained_char"] is True, this function loads the initial
-      character embeddings based on config_dict["char_pretrained_path"] and
-      config_dict["char_vocab_path"], and save the character embeddings into global varable
-      **char_embeds**, **char_to_ix**.
+    * If config_dict["use_pretrained_char"] is True, this function loads the Glove
+      character embeddings file from the path *config_dict["char_pretrained_path"]* and *config_dict["char_vocab_path"]*,
+      and save the char embeddings into global varable **char_embeds**, **char_to_ix**.
 
-    :param config_dict: s configuration dictionary
-    :returns: global variables: word_embeds, word_to_ix, char_embeds, char_to_ix.
-     word_embeds and char_embeds is a ndarray. word_to_ix and char_to_ix is dict.
+    * If config_dict["use_pretrained_char"] is False, this function loads the one-hot character embeddings,
+      and save the char embeddings into global varable **char_embeds**, **char_to_ix**.
 
-    '''
-    logging.info('Loading word embeddings...')
+    :param config_dict: A configuration dictionary which should have items:
+        "glove_path", "use_pretrained_char", "char_pretrained_path", "char_vocab_path".
+        For the explanation of those items, refer to config_files_readme.md.
+    :returns: No return. The following global variables are changed:
+        word_embeds, word_to_ix, char_embeds, char_to_ix.
+        For the explanation of those variables, refer to comment of those.
+    """
+    #
+    global word_embeds, word_to_ix, char_embeds, char_to_ix
     # load glove word embeddings
+    logging.info('Loading word embeddings...')
     word_vocab, word_embds = loadGloveWordEmbedding(config_dict["glove_path"])
     word_embeds = np.asarray(word_embds, dtype=np.float64)
     i = 0
@@ -161,6 +150,7 @@ def load_model_embeddings(config_dict: dict) -> tuple:
         i += 1
     logging.info('Word embeddings have been loaded.')
     # load glove char embeddings
+    logging.info('Loading pretrained char embeddings...')
     if config_dict["use_pretrained_char"]:
         logging.info('Loading pre-trained char embeddings...')
         char_embeds, char_vocab = loadGloveCharEmbeddings(config_dict["char_pretrained_path"],
@@ -176,10 +166,9 @@ def load_model_embeddings(config_dict: dict) -> tuple:
         char_to_ix['<UNK>'] = len(char_to_ix)
         unk_vec = np.random.rand(1, char_embeds.shape[1])
         char_embeds = np.append(char_embeds, unk_vec, axis=0)
-        logging.info('Char embeddings have been loaded.')
+        logging.info('Pre-trained char embeddings have been loaded.')
     # load one-hot char embeddings
     else:
         logging.info('Loading one-hot char embeddings...')
         char_embeds, char_to_ix = load_one_hot_char_embeddings(config_dict["char_vocab_path"])
-
-    return word_embeds, word_to_ix, char_embeds, char_to_ix
+        logging.info('One-hot char embeddings have been loaded.')

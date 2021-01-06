@@ -7,11 +7,13 @@ import logging
 import itertools
 import collections
 import numpy as np
+import _pickle as cPickle
+from typing import Dict, List, Tuple, Union, Optional  # for type hinting
+
+from src.all_models.bcubed_scorer import *
 from scorer import *
 from src.shared.eval_utils import *
-import _pickle as cPickle
-from src.all_models.bcubed_scorer import *
-from typing import Dict, List, Tuple, Union  # for type hinting
+from src.all_models.models import CDCorefScorer
 from src.shared.classes import *
 from src.shared.classes import Corpus, Topic, Document, Sentence, Mention, EventMention, EntityMention, Token, Srl_info, Cluster
 # import matplotlib.pyplot as plt
@@ -61,6 +63,7 @@ def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
     ecb语料库中是一个topic包含多个doc，即为真实的topic-doc对应关系。现在我抛弃这个对应关系，
     基于别的文档聚类算法，直接根据doc做文档聚类，得到预测的topic-doc对应关系。
     这个函数的作用就是把按照真实topic-doc对应关系组织的语料，根据预测的topic-doc对应关系重新排序组织。
+
     :param test_set: 原测试集，按照真实topic-doc对应关系组织document实例。
     :param config_dict: 字典对象，其中"predicted_topics_path"项是一个描述文件路径的字符串，文件保存
     了预测的topic-doc对应关系(即文档聚类结果)。
@@ -108,8 +111,6 @@ def load_predicted_topics(test_set: Corpus, config_dict: dict) -> dict:
             if doc_name in all_doc_dict:
                 new_topics[topic_id].docs[doc_name] = all_doc_dict[doc_name]
         topic_counter += 1
-    print()
-
     print('共有', len(new_topics), '个topic')
     print('按照外部文档聚类结果重新组织测试集：结束...')
     return new_topics
@@ -138,7 +139,7 @@ def topic_to_mention_list(topic: Topic, is_gold: bool) -> Tuple[List[EventMentio
     return event_mentions, entity_mentions
 
 
-def load_entity_wd_clusters(config_dict: Dict) -> Dict[str, Dict]:
+def load_entity_wd_clusters(config_dict: Dict) -> Dict[str, Dict[str, any]]:
     '''
     Loads from a file the within-document (WD) entity coreference clusters predicted by an external WD entity coreference
     model/tool and ordered those clusters in a dictionary according to their documents.其实就是根据配置读取外部WD实体共指
@@ -251,7 +252,6 @@ def init_entity_wd_clusters(entity_mentions, doc_to_entity_mentions):
             if len(cluster.mentions.values()) > 1:
                 count_matched_clusters += 1
 
-    print('Matched non-singleton clusters {}'.format(count_matched_clusters))
     logging.info('Matched non-singleton clusters {}'.format(count_matched_clusters))
 
     return all_entity_clusters
@@ -415,29 +415,28 @@ def get_char_embed(word, model, device):
     return char_vec
 
 
-def find_word_embed(word, model, device):
-    '''
-    Given a word (string), this function fetches its word embedding (or unknown embeddings for
-    OOV words)
+def find_word_embed(word: str, model: CDCorefScorer, device: torch.cuda.device) -> torch.Tensor:
+    """
+    This function get the embedding vector of *word* from the word embedding layer in *model*.
+    In the setting of Barhom2019, the word embedding layer is Glove300d.
 
-    :param word: a word (string)
-    :param model: CDCorefScorer object
-    :param device: Pytorch device (gpu/cpu)
-    :return: a word vector
-    '''
+    :param word: A word.
+    :param model: A CDCorefScorer object which has a word embedding layer.
+    :param device: Pytorch device
+    :return: The embedding vector of *word*
+    """
     word_to_ix = model.word_to_ix
     word = clean_word(word)
+    # get word index
     if word in word_to_ix:
         word_ix = [word_to_ix[word]]
+    elif word.lower() in word_to_ix:
+        word_ix = [word_to_ix[word.lower()]]
     else:
-        lower_word = word.lower()
-        if lower_word in word_to_ix:
-            word_ix = [word_to_ix[lower_word]]
-        else:
-            word_ix = [word_to_ix['unk']]
-
-    word_tensor = model.embed(torch.tensor(word_ix, dtype=torch.long).to(device))
-
+        word_ix = [word_to_ix['unk']]
+    # get word embedding
+    word_tensor = model.word_embed_layer(torch.tensor(word_ix, dtype=torch.long).to(device))
+    #
     return word_tensor
 
 
@@ -584,6 +583,7 @@ def calc_q(cluster_1, cluster_2):
     Calculates the quality of merging two clusters, denotes by the proportion between
     the number gold coreferrential mention pairwise links (between the two clusters) and all the
     pairwise links.
+
     :param cluster_1: first cluster
     :param cluster_2: second cluster
     :return: the quality of merge (a number between 0 to 1)
@@ -619,7 +619,7 @@ def loadGloveWordEmbedding(glove_filename: str) -> Tuple[List, List]:
                     vocab.append(row[0])
                     embd.append(row[1:])
                     if len(row[1:]) != 300:
-                        print("warning: len of embedding of word %s is not 300." % (vocab[-1]))
+                        logging.info("warning: len of embedding of word %s is not 300." % (vocab[-1]))
     #
     return vocab, embd
 
@@ -814,110 +814,148 @@ def write_entity_coref_results(corpus, out_dir,config_dict):
         src.shared.eval_utils.write_mention_based_wd_clusters(corpus, is_event=False, is_gold=False, out_file=out_file)
 
 
-def create_event_cluster_bow_lexical_vec(event_cluster, model, device, use_char_embeds,
-                                         requires_grad):
-    '''
-    Creates the semantically-dependent vector of a specific event cluster
-    (average of mention's span vectors in the cluster)
+def create_event_cluster_bow_lexical_vec(event_cluster: Cluster, model: CDCorefScorer,
+                                         device: torch.cuda.device, use_char_embeds: bool, requires_grad: bool):
+    """
+    Creates the semantically-dependent vector of an entity cluster (average of mention's span vectors in the cluster)
+    计算簇向量。
 
-    :param event_cluster: event cluster
+    - 簇向量 = 簇内指称向量的平均值。
+    - If *use_char_embeds* is true, 指称向量s(m) = (词级指称向量(m);字级指称向量(m));
+    - If *use_char_embeds* is false, 指称向量s(m) = (词级指称向量(m));
+    - 词级指称(m) = 指称内各词的glove词向量的平均值。
+    - 字级嵌入(m) = ?
+
+    :param event_cluster: entity cluster
     :param model: CDCorefScorer model
     :param device: Pytorch device (gpu/cpu)
     :param use_char_embeds: whether to use character embeddings
-    :param requires_grad: whether the tensors require gradients (True for training time and
-    False for inference time)
-    :return: semantically-dependent vector of a specific event cluster
-    (average of mention's span vectors in the cluster)
-    '''
+    :param requires_grad: whether the tensors require gradients (True for
+        training time and False for inference time)
+    :return: semantically-dependent vector of a specific entity cluster
+        (average of mention's span vectors in the cluster)
+    """
+    # init cluster_vec
     if use_char_embeds:
         bow_vec = torch.zeros(
-            model.embedding_dim + model.char_hidden_dim,
+            model.word_embed_dim + model.char_hidden_dim,
             requires_grad=requires_grad
         ).to(device).view(1, -1)
     else:
         bow_vec = torch.zeros(
-            model.embedding_dim,
+            model.word_embed_dim,
             requires_grad=requires_grad
         ).to(device).view(1, -1)
+    # set cluster_vec
     for event_mention in event_cluster.mentions.values():
-        # creating lexical vector using the head word of each event mention in the cluster
+        # 1. get word level embedding of cur event mention. 词级指称向量 = head的词向量
         head = event_mention.mention_head
-        head_tensor = find_word_embed(head, model, device)
+        words_vec = find_word_embed(head, model, device)
+        # 2. get char level embedding of cur entity mention. 字级指称向量
         if use_char_embeds:
-            char_tensor = get_char_embed(head, model, device)
+            chars_vec = get_char_embed(head, model, device)
             if not requires_grad:
-                char_tensor = char_tensor.detach()
-            cat_tensor = torch.cat([head_tensor, char_tensor], 1)
+                chars_vec = chars_vec.detach()
+        # 3. get embedding of cur entity mention. 指称向量 = (词级指称向量;字级指称向量)
+        if use_char_embeds:
+            # s(m) = (词级嵌入(m);字级嵌入(m))
+            mention_vec = torch.cat([words_vec, chars_vec], 1)
         else:
-            cat_tensor = head_tensor
-        bow_vec += cat_tensor
-
+            # s(m) = (词级嵌入(m))
+            mention_vec = words_vec
+        # 4. get embedding of cur entity cluster. 簇向量 = 簇内指称向量的平均值
+        bow_vec += mention_vec
     return bow_vec / len(event_cluster.mentions.keys())
 
 
-def create_entity_cluster_bow_lexical_vec(entity_cluster, model, device, use_char_embeds,
-                                          requires_grad):
-    '''
-    Creates the semantically-dependent vector of a specific entity cluster
-    (average of mention's span vectors in the cluster)
+def create_entity_cluster_bow_lexical_vec(entity_cluster: Cluster, model: CDCorefScorer,
+                                          device: torch.cuda.device, use_char_embeds: bool, requires_grad: bool):
+    """
+    Creates the semantically-dependent vector of an entity cluster (average of mention's span vectors in the cluster)
+    计算簇向量。
+
+    - 簇向量 = 簇内指称向量的平均值。
+    - If *use_char_embeds* is true, 指称向量s(m) = (词级指称向量(m);字级指称向量(m));
+    - If *use_char_embeds* is false, 指称向量s(m) = (词级指称向量(m));
+    - 词级指称(m) = 指称内各词的glove词向量的平均值。
+    - 字级嵌入(m) = ?
+
     :param entity_cluster: entity cluster
     :param model: CDCorefScorer model
     :param device: Pytorch device (gpu/cpu)
     :param use_char_embeds: whether to use character embeddings
-    :param requires_grad: whether the tensors require gradients (True for training time and
-    False for inference time)
+    :param requires_grad: whether the tensors require gradients (True for
+        training time and False for inference time)
     :return: semantically-dependent vector of a specific entity cluster
-    (average of mention's span vectors in the cluster)
-    '''
+        (average of mention's span vectors in the cluster)
+    """
+    # init cluster_vec
     if use_char_embeds:
-        bow_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                              requires_grad=requires_grad).to(device).view(1, -1)
+        cluster_vec = torch.zeros(
+            model.word_embed_dim + model.char_hidden_dim,
+            requires_grad=requires_grad
+        ).to(device).view(1, -1)
     else:
-        bow_vec = torch.zeros(model.embedding_dim,
-                              requires_grad=requires_grad).to(device).view(1, -1)
+        cluster_vec = torch.zeros(
+            model.word_embed_dim,
+            requires_grad=requires_grad
+        ).to(device).view(1, -1)
+    # set cluster_vec
     for entity_mention in entity_cluster.mentions.values():
-        # creating lexical vector using each entity mention in the cluster
-        mention_bow = torch.zeros(model.embedding_dim,
-                                  requires_grad=requires_grad).to(device).view(1, -1)
-        mention_embeds = [find_word_embed(token, model, device)
-                          for token in entity_mention.get_tokens()
-                          if not is_stop(token)]
+        # 1. get word level embedding of cur entity mention. 词级指称向量 = 指称中每个词的词向量的平均
+        if 1:
+            # 1.1 init words_vec
+            words_vec = torch.zeros(model.word_embed_dim, requires_grad=requires_grad).to(device).view(1, -1)
+            """word level embedding of cur entity mention."""
+            # 1.2 calc words_vec: 实体指称的嵌入等于指称内每个词的嵌入取平均
+            words_vec_list: List[torch.Tensor] = [find_word_embed(word, model, device)
+                                                  for word in entity_mention.get_tokens()
+                                                  if not is_stop(word)]
+            """GloVe embedding of each word in cur entity mention make up a list."""
+            for word_vec in words_vec_list:
+                words_vec += word_vec
+            words_vec /= len(entity_mention.get_tokens())
+        # 2. get char level embedding of cur entity mention. 字级指称向量
         if use_char_embeds:
-            char_embeds = get_char_embed(entity_mention.mention_str, model, device)
-
-        for word_tensor in mention_embeds:
-            mention_bow += word_tensor
-
-        mention_bow /= len(entity_mention.get_tokens())
-
-        if use_char_embeds:
+            chars_vec = get_char_embed(entity_mention.mention_str, model, device)
+            """word level embedding of cur entity mention."""
             if not requires_grad:
-                char_embeds = char_embeds.detach()
-
-            cat_tensor = torch.cat([mention_bow, char_embeds], 1)
+                chars_vec = chars_vec.detach()
+        # 3. get embedding of cur entity mention. 指称向量 = (词级指称向量;字级指称向量)
+        if use_char_embeds:
+            # s(m) = (词级嵌入(m);字级嵌入(m))
+            mention_vec = torch.cat([words_vec, chars_vec], 1)
         else:
-            cat_tensor = mention_bow
-        bow_vec += cat_tensor
+            # s(m) = (词级嵌入(m))
+            mention_vec = words_vec
+        # 4. get embedding of cur entity cluster. 簇向量 = 簇内指称向量的平均值
+        cluster_vec += mention_vec
+    return cluster_vec / len(entity_cluster.mentions.keys())
 
-    return bow_vec / len(entity_cluster.mentions.keys())
 
-
-def find_mention_cluster_vec(mention_id, clusters):
-    '''
+def find_mention_cluster_vec(mention_id: str, clusters: Cluster) -> torch.Tensor:
+    """
     Fetches a semantically-dependent vector of a mention's cluster
 
-    :param mention_id: mention ID (string)
+    Given a mention id, this function:
+    1. find out which cluster this mention belong to.
+    2. return the semantically-dependent vector of this cluster, that is the_cluster.lex_vec.
+
+    :param mention_id: mention ID.
     :param clusters: list of Cluster objects
-    :return: semantically-dependent vector of a mention's cluster - Pytorch tensor with
-     size (1, 350).
-    '''
+    :return: semantically-dependent vector of a mention's cluster.
+        Pytorch tensor with size (1, 350).
+    """
     for cluster in clusters:
         if mention_id in cluster.mentions:
             return cluster.lex_vec.detach()
 
 
-def create_event_cluster_bow_arg_vec(event_cluster, entity_clusters, model, device):
-    '''
+def create_event_cluster_bow_arg_vec(event_cluster: List[Cluster], entity_clusters: List[Cluster],
+                                     model: CDCorefScorer, device: torch.cuda.device) -> None:
+    """
+    根据实体簇，更新事件簇中每个事件指称的语义依存向量（arg0，arg1，time， loc）。
+
     Creates the semantically-dependent vectors (of all roles) for all mentions
     in a specific event cluster.
 
@@ -925,163 +963,156 @@ def create_event_cluster_bow_arg_vec(event_cluster, entity_clusters, model, devi
     :param entity_clusters: current predicted entity clusters (a list)
     :param model: CDCorefScorer object
     :param device: Pytorch device
-    '''
+    :return: No return.
+        But for each event mention in *event_cluster*, the_event_mention.arg0_vec/arg1_vec/time_vec/loc_vec are setted.
+    """
     for event_mention in event_cluster.mentions.values():
-        event_mention.arg0_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        event_mention.arg1_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        event_mention.time_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        event_mention.loc_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
+        event_mention.arg0_vec = torch.zeros( model.word_embed_dim + model.char_hidden_dim, requires_grad=False ).to(device).view(1, -1)
+        event_mention.arg1_vec = torch.zeros( model.word_embed_dim + model.char_hidden_dim, requires_grad=False ).to(device).view(1, -1)
+        event_mention.time_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
+        event_mention.loc_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
         if event_mention.arg0 is not None:
-            arg_vec = find_mention_cluster_vec(event_mention.arg0[1], entity_clusters)
-            event_mention.arg0_vec = arg_vec.to(device)
+            event_mention.arg0_vec = find_mention_cluster_vec(event_mention.arg0[1], entity_clusters).to(device)
         if event_mention.arg1 is not None:
-            arg_vec = find_mention_cluster_vec(event_mention.arg1[1], entity_clusters)
-            event_mention.arg1_vec = arg_vec.to(device)
+            event_mention.arg1_vec = find_mention_cluster_vec(event_mention.arg1[1], entity_clusters).to(device)
         if event_mention.amtmp is not None:
-            arg_vec = find_mention_cluster_vec(event_mention.amtmp[1], entity_clusters)
-            event_mention.time_vec = arg_vec.to(device)
+            event_mention.time_vec = find_mention_cluster_vec(event_mention.amtmp[1], entity_clusters).to(device)
         if event_mention.amloc is not None:
-            arg_vec = find_mention_cluster_vec(event_mention.amloc[1], entity_clusters)
-            event_mention.loc_vec = arg_vec.to(device)
+            event_mention.loc_vec = find_mention_cluster_vec(event_mention.amloc[1], entity_clusters).to(device)
 
 
-def create_entity_cluster_bow_predicate_vec(entity_cluster, event_clusters, model, device):
-    '''
-    更新实体簇中每个实体指称的的dependency vector。
-    即entity_mention.arg0_vec/arg1_vec/time_vec/loc_vec
+def create_entity_cluster_bow_predicate_vec(entity_cluster: List[Cluster], event_clusters: List[Cluster],
+                                            model: CDCorefScorer, device: torch.cuda.device):
+    """
+    根据事件簇，更新实体簇中每个实体指称的的语义依存向量（arg0，arg1，time， loc）。
 
     Creates the semantically-dependent vectors (of all roles) for all mentions
-    in a specific event cluster.
+    in a specific entity cluster.
 
     :param entity_cluster: a Cluster object which contains EntityMention objects.
-    :param event_clusters: current predicted entity clusters (a list)
+    :param event_clusters: current predicted event clusters (a list)
     :param model: CDCorefScorer object
     :param device: Pytorch device
-    '''
+    :return: No return.
+        But for each entity mention in *entity_cluster*, the_entity_mention.arg0_vec/arg1_vec/time_vec/loc_vec are setted.
+
+    """
     for entity_mention in entity_cluster.mentions.values():
-        entity_mention.arg0_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        entity_mention.arg1_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        entity_mention.time_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
-        entity_mention.loc_vec = torch.zeros(model.embedding_dim + model.char_hidden_dim,
-                                  requires_grad=False).to(device).view(1, -1)
+        entity_mention.arg0_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
+        entity_mention.arg1_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
+        entity_mention.time_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
+        entity_mention.loc_vec = torch.zeros(model.word_embed_dim + model.char_hidden_dim, requires_grad=False).to(device).view(1, -1)
         predicates_dict = entity_mention.predicates
         for predicate_id, rel in predicates_dict.items():
             if rel == 'A0':
-                pred_vec = find_mention_cluster_vec(predicate_id[1], event_clusters)
-                entity_mention.arg0_vec = pred_vec.to(device)
+                entity_mention.arg0_vec = find_mention_cluster_vec(predicate_id[1], event_clusters).to(device)
             elif rel == 'A1':
-                pred_vec = find_mention_cluster_vec(predicate_id[1], event_clusters)
-                entity_mention.arg1_vec = pred_vec.to(device)
+                entity_mention.arg1_vec = find_mention_cluster_vec(predicate_id[1], event_clusters).to(device)
             elif rel == 'AM-TMP':
-                pred_vec = find_mention_cluster_vec(predicate_id[1], event_clusters)
-                entity_mention.time_vec = pred_vec.to(device)
+                entity_mention.time_vec = find_mention_cluster_vec(predicate_id[1], event_clusters).to(device)
             elif rel == 'AM-LOC':
-                pred_vec = find_mention_cluster_vec(predicate_id[1], event_clusters)
-                entity_mention.loc_vec = pred_vec.to(device)
+                entity_mention.loc_vec = find_mention_cluster_vec(predicate_id[1], event_clusters).to(device)
 
 
-def update_lexical_vectors(clusters: List[Cluster], model, device,is_event, requires_grad):
-    '''
-    Updates for each cluster its average vector of all mentions' span representations
-    (Used to form the semantically-dependent vectors)
+def update_lexical_vectors(clusters: List[Cluster], model: CDCorefScorer,
+                           device: torch.cuda.device, is_event: bool, requires_grad: bool):
+    """
+    For each cluster in *clusters*, this function set it's lexical vector (the_cluster.lex_vec).
+
+    the_cluster.lex_vec = average(簇内每个指称的指称向量s(m)).
 
     :param clusters: list of Cluster objects (event/entity clsuters)
-    :param model: CDCorefScorer object, should be an event model if clusters are event clusters
-     (and the same with entities)
+    :param model: It should be an event model if clusters are event clusters (and
+        the same with entities)
     :param device: Pytorch device
-    :param is_event: True if clusters are event clusters and false otherwise (clusters are entity
-     clusters)
+    :param is_event: True, if *clusters* are event clusters; False, if *clusters* are entity clusters.
     :param requires_grad: True if tensors require gradients (for training time) , and
      False for inference time.
     :return: no return, but set cluster.lex_vec
-    '''
+    """
     for cluster in clusters:
         if is_event:
-            lex_vec = create_event_cluster_bow_lexical_vec(cluster, model, device,
-                                                           use_char_embeds=True,
-                                                           requires_grad=requires_grad)
+            lex_vec = create_event_cluster_bow_lexical_vec(cluster, model, device, use_char_embeds=True, requires_grad=requires_grad)
         else:
-            lex_vec = create_entity_cluster_bow_lexical_vec(cluster, model, device,
-                                                            use_char_embeds=True,
-                                                            requires_grad=requires_grad)
+            lex_vec = create_entity_cluster_bow_lexical_vec(cluster, model, device, use_char_embeds=True, requires_grad=requires_grad)
         cluster.lex_vec = lex_vec
 
 
-def update_args_feature_vectors(clusters, other_clusters ,model ,device, is_event):
-    '''
-    输入一组实体(事件)簇，根据当前事件(实体)簇更新实体(事件)簇中每一个实体(事件)指称的dependency
-    vector。
+def update_args_feature_vectors(clusters: List[Cluster], other_clusters: List[Cluster],
+                                model: CDCorefScorer, device: torch.cuda.device, is_event: bool) -> None:
+    """
 
-     Updates for each mention in clusters its semantically-dependent vectors
+    根据*other_clusters* (实体/事件簇)，更新*clusters* (事件/实体簇)中每个事件/实体指称的语义依存向量 。
 
-    :param clusters: current event/entity clusters (list of Cluster objects)
-    :param other_clusters: should be the current event clusters if clusters = entity clusters
-    and vice versa.
+    Based on *other_cluster* (entity/event clusters), update the dependency
+    vector (includes: arg0, arg1, time, loc) of each mention in *clusters* (event/entity clusters).
+
+    That is V->d(m_e) or E->d(m_v).
+
+    :param clusters: A list of event/entity clusters.
+    :param other_clusters: A list of entity/event clusters.
     :param model: event/entity model (should be according to clusters parameter)
     :param device: Pytorch device
-    :param is_event: True if clusters are event clusters and False if they are entity clusters.
-    '''
+    :param is_event: True, if *clusters* are event clusters; False, if *clusters* are entity clusters.
+    :return: No return.
+        But for each  mention in *cluster*, the_mention.arg0_vec/arg1_vec/time_vec/loc_vec are setted.
+    """
     for cluster in clusters:
         if is_event:
-            # Use an average of span representations to represent arguments/predicates clusters.
-            # 更新每个事件指称的dependency vector
+            # 基于实体簇，更新事件指称的dependency vector
             create_event_cluster_bow_arg_vec(cluster, other_clusters, model, device)
         else:
-            # 更新每个实体指称的dependency vector
+            # 基于事件簇，更新实体指称的dependency vector
             create_entity_cluster_bow_predicate_vec(cluster, other_clusters, model, device)
 
 
-def generate_cluster_pairs(clusters, is_train):
-    '''
+def generate_cluster_pairs(clusters: List[Cluster], is_train) -> Tuple[
+    List[Union[Tuple[Cluster, Cluster, float], Tuple[Cluster, Cluster]]],
+    List[Tuple[Cluster, Cluster]]
+]:
+    """
+    Given list of clusters, this function generates candidate cluster pairs:
+        - If *is_train* is true, this function returns tuple (train_pairs, test_pairs).
+        - If *is_train* is false, this function returns tuple (test_pairs, [])
 
-    Given list of clusters, this function generates candidate cluster pairs (for training/
-    inference). The function under-samples cluster pairs without any coreference links when
-    generating cluster pairs for training and the current number of clusters in the current topic is
-    larger than 300.
+    and
+        - train_pairs is a list of tuple，one tuple represents one cluster pair. 
+          The tuple likes (cluster1, cluster2, true score).
+          train_pairs includes of all possible cluster pairs, if len(clusters) <= 300.
+          train_pairs includes of under-sampled cluster pairs, if len(clusters) > 300.
+        - test_pairs is a list of tuple, one tuple represents one cluster pair. 
+          The tuple likes (cluster1, cluster2).
+          test_pairs includes all possible cluster pairs.
 
     :param clusters: current clusters
     :param is_train: True if the function generates candidate cluster pairs for training time
-    and False, for inference time (without under-sampling)
-    :return: pairs - generated cluster pairs (potentially with under-sampling)
-    , test_pairs -  all cluster pairs
-    '''
-
-    positive_pairs_count = 0
-    negative_pairs_count = 0
-    pairs = []
-    test_pairs = []
-
-    use_under_sampling = True if (len(clusters) > 300 and is_train) else False
-
-    if len(clusters) < 500:
-        p = 0.7
-    else:
-        p = 0.6
-
-    print('Generating cluster pairs...')
+        , and False for inference time (without under-sampling)
+    :return: (train_pairs, test_pairs) or (test_pairs, [])
+    """
     logging.info('Generating cluster pairs...')
-
-    print('Initial number of clusters = {}'.format(len(clusters)))
     logging.info('Initial number of clusters = {}'.format(len(clusters)))
 
-    if use_under_sampling:
-        print('Using under sampling with p = {}'.format(p))
-        logging.info('Using under sampling with p = {}'.format(p))
-
-    for cluster_1 in clusters:
-        for cluster_2 in clusters:
-            if cluster_1 != cluster_2:
-                if is_train:
+    if is_train:
+        positive_pairs_count = 0
+        negative_pairs_count = 0
+        train_pairs = []  # 用于训练的候选簇对，带共指得分
+        test_pairs = []   # 用于测试的候选簇对，不带共指得分
+        # 判断train_pairs是否需要下采样
+        use_under_sampling = True if len(clusters) > 300 else False
+        if len(clusters) < 500:
+            p = 0.7
+        else:
+            p = 0.6
+        if use_under_sampling:
+            logging.info('Using under sampling with p = {}'.format(p))
+        # 遍历所有簇对
+        for cluster_1 in clusters:
+            for cluster_2 in clusters:
+                if cluster_1 != cluster_2:
                     q = calc_q(cluster_1, cluster_2)
-                    if (cluster_1, cluster_2, q) not in pairs and (cluster_2, cluster_1, q) not in pairs:
-                        add_to_training = False if use_under_sampling else True
+                    if (cluster_1, cluster_2, q) not in train_pairs and (cluster_2, cluster_1, q) not in train_pairs:
+                        # 把当前簇对添加到train_pairs
+                        add_to_training = not use_under_sampling
                         if q > 0:
                             add_to_training = True
                             positive_pairs_count += 1
@@ -1089,21 +1120,29 @@ def generate_cluster_pairs(clusters, is_train):
                             add_to_training = True
                             negative_pairs_count += 1
                         if add_to_training:
-                            pairs.append((cluster_1, cluster_2, q))
+                            train_pairs.append((cluster_1, cluster_2, q))
+                        # 把当前簇对添加到test_pairs
                         test_pairs.append((cluster_1, cluster_2))
-                else:
-                    if (cluster_1, cluster_2) not in pairs and (cluster_2, cluster_1) not in pairs:
-                        pairs.append((cluster_1, cluster_2))
+        return train_pairs, test_pairs
+    else:
+        test_pairs = []  # 用于测试的候选簇对，不带共指得分
+        # 遍历所有簇对
+        for cluster_1 in clusters:
+            for cluster_2 in clusters:
+                if cluster_1 != cluster_2:
+                    if (cluster_1, cluster_2) not in test_pairs and (cluster_2, cluster_1) not in test_pairs:
+                        # 把当前簇对添加到test_pairs
+                        test_pairs.append((cluster_1, cluster_2))
+        return test_pairs, []
 
-    print('Number of generated cluster pairs = {}'.format(len(pairs)))
-    logging.info('Number of generated cluster pairs = {}'.format(len(pairs)))
 
-    return pairs, test_pairs
-
-
-def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
-    '''
-    Creates for a mention its context and span text vectors and concatenates them.
+def get_mention_span_rep(mention: Mention, device: torch.cuda.device, model: CDCorefScorer,
+                         docs: Dict[str, Document], is_event: bool, requires_grad: bool) -> torch.Tensor:
+    """
+    For *mention*, this function:
+        - calc it's span text vector s(m) = average(word embedding of each word in the mention)
+        - calc it's context vector c(m) = elmo embedding of mention head.
+        - set the_mention.span_rep = (c(m) ; s(m))
 
     :param mention: an Mention object (either an EventMention or an EntityMention)
     :param device: Pytorch device
@@ -1111,93 +1150,102 @@ def get_mention_span_rep(mention, device, model, docs, is_event, requires_grad):
     :param docs: the current topic's documents
     :param is_event: True if mention is an event mention and False if it is an entity mention
     :param requires_grad: True if tensors require gradients (for training time) , and
-    False for inference time.
-    :return: a tensor with size (1, 1374)
-    '''
+        False for inference time.
+    :return: The span representation of *mention*. It is a tensor with size (1, 1374).
+    """
+    # 1. get the context vector c(m)
+    context_vec = mention.head_elmo_embeddings.to(device).view(1, -1)
 
-    span_tensor = mention.head_elmo_embeddings.to(device).view(1, -1)
-
+    # 2. get the span text vector s(m)
+    span_vec: torch.Tensor = torch.zeros(model.word_embed_dim+model.char_hidden_dim, requires_grad=requires_grad).to(device).view(1, -1)
     if is_event:
         head = mention.mention_head
-        head_tensor = find_word_embed(head, model, device)
-        char_embeds = get_char_embed(head, model, device)
-        mention_tensor = torch.cat([head_tensor, char_embeds], 1)
+        words_vec = find_word_embed(head, model, device)
+        chars_vec = get_char_embed(head, model, device)
+        span_vec = torch.cat([words_vec, chars_vec], 1)
     else:
-        mention_bow = torch.zeros(model.embedding_dim, requires_grad=requires_grad).to(device).view(1, -1)
-        mention_embeds = [find_word_embed(token, model, device) for token in mention.get_tokens()
-                          if not is_stop(token)]
-
-        for mention_word_tensor in mention_embeds:
-            mention_bow = mention_bow + mention_word_tensor
+        words_vec = torch.zeros(model.word_embed_dim, requires_grad=requires_grad).to(device).view(1, -1)
+        word_vec_list = [find_word_embed(token, model, device) for token in mention.get_tokens()
+                         if not is_stop(token)]
+        for word_vec in word_vec_list:
+            words_vec = words_vec + word_vec
             """
-            改bug，mention_bow += mention_word_tensor，改成上边那样。
+            改bug，mention_bow += mention_word_tensor，改成mention_bow = mention_bow + mention_word_tensor
+            (后来命名改了，但就是这个意思)
             问题所在：mention_bow初始没问题，但循环中的+=是inplace操作，所以_version非0，产生了问题
             """
-        char_embeds = get_char_embed(mention.mention_str, model, device)
+        chars_vec = get_char_embed(mention.mention_str, model, device)
+        if len(word_vec_list) > 0:
+            words_vec = words_vec / float(len(word_vec_list))
+        span_vec = torch.cat([words_vec, chars_vec], 1)
 
-        if len(mention_embeds) > 0:
-            mention_bow = mention_bow / float(len(mention_embeds))
-
-        mention_tensor = torch.cat([mention_bow, char_embeds], 1)
-
-    mention_span_rep = torch.cat([span_tensor, mention_tensor], 1)
-
+    # 3. mention span rep = (c(m);s(m))
+    mention_span_rep = torch.cat([context_vec, span_vec], 1)
     if requires_grad:
         if not mention_span_rep.requires_grad:
             logging.info('mention_span_rep does not require grad ! (warning)')
     else:
         mention_span_rep = mention_span_rep.detach()
-
     return mention_span_rep
 
 
 def create_mention_span_representations(
-        mentions: list,
-        model: "src.all_models.models.CDCorefScorer",
-        device: torch.device,
-        topic_docs: dict,
-        is_event: bool,
-        requires_grad: bool
-):
-    '''
+        mentions: List[Mention], model: CDCorefScorer,
+        device: torch.cuda.device, topic_docs: dict,
+        is_event: bool, requires_grad: bool
+) -> None:
+    """
+    For each mention in *mentions*:
+        - calc their span text vector s(m) = average(word embedding of each word in the mention)
+        - calc their context vector c(m) = elmo embedding of mention head.
+        - set each_mention.span_rep = (c(m) ; s(m))
     Creates for a set of mentions their context and span text vectors.
+
     :param mentions: a list of EventMention objects (or a list of EntityMention objects)
     :param model: CDCorefScorer object, should be in the same type as the mentions
     :param device: Pytorch device
     :param topic_docs: the current topic's documents, like {'45_6ecb': Document object,...}
     :param is_event: True if mention is an event mention and False if it is an entity mention
-    :param requires_grad: True if tensors require gradients (for training time) , and
-    False for inference time.
-     embeddings (performs worse than ELMo embeddings)
-    '''
-    for mention in mentions:  # mentions = [mention object,...]
-        # mention = mention object
-        mention.span_rep = get_mention_span_rep(mention, device, model, topic_docs,
-                                                is_event, requires_grad)
+    :param requires_grad: True if tensors require gradients (for training time) , and False for inference time.
+    :return: No return. But for each mention in *mentions*, each_mention.span_rep are updated.
+    """
+    for mention in mentions:
+        mention.span_rep = get_mention_span_rep(mention, device, model, topic_docs, is_event, requires_grad)
 
 
 def mention_pair_to_model_input(pair, model, device, topic_docs, is_event, requires_grad,
                                  use_args_feats, use_binary_feats, other_clusters):
-    '''
-    Given a pair of mentions, the function builds the input to the network (the mention-pair
-    representation) and returns it.
-    :param pair: a tuple of two Mention objects (should be of the same type - events or entities)
-    :param model: CDCorefScorer object (should be in the same type as pair - event or entity Model)
+    """
+    Given a pair of mentions (m_i, m_j), this function returns the mention-pair
+    representation v_i,j (which is the input to the network).
+
+    v_i,j = (v(m_i); v(m_j); v(m_i)-v(m_j); v(m_i)*v(m_j); f(i,j))
+        - if model.use_mult is False, delete v(m_i)*v(m_j).
+        - if model.use_diff is False, delete v(m_i)-v(m_j).
+        - if use_binary_feats is False, delete f(i,j).
+
+    v(m) = (s(m); d(m))
+        - if use_args_fears is False, delete d(m)
+
+    :param pair: a tuple of two Mention objects (should be of the same type -
+        events or entities)
+    :param model: CDCorefScorer object (should be in the same type as pair -
+        event or entity Model)
     :param device: Pytorch device
     :param topic_docs: the current topic's documents
     :param is_event: True if pair is an event mention pair and False if it's
-     an entity mention pair.
-    :param requires_grad: True if tensors require gradients (for training time) , and
-    False for inference time.
-    :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate
-    them.
-    :param use_binary_feats: whether to use the binary coreference features or to ablate
-    them.
-    :param other_clusters: should be the current event clusters if pair is an entity mention pair
-    and vice versa.
-    :return: the mention-pair representation - a tensor of size (1,X), when X = 8522 in the full
-    joint model (without any ablation)
-    '''
+        an entity mention pair.
+    :param requires_grad: True if tensors require gradients (for training time) ,
+        and False for inference time.
+    :param use_args_feats: whether to use the semantically-dependent mention
+        vectors or to ablate them.
+    :param use_binary_feats: whether to use the binary coreference features or to
+        ablate them.
+    :param other_clusters: should be the current event clusters if pair is an
+        entity mention pair and vice versa.
+    :return: the mention-pair representation - a tensor of size (1,X), when X =
+        8522 in the full joint model (without any ablation)
+    """
     mention_1 = pair[0]
     mention_2 = pair[1]
 
@@ -1272,18 +1320,19 @@ def train_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_
     '''
     tensors_list = []
     q_list = []
+
     for pair in batch_pairs:
+        # v_i,j = (v(m_i); v(m_j); v(m_i) * v(m_j); f(i, j))
         mention_pair_tensor = mention_pair_to_model_input(pair, model, device, topic_docs,
                                                           is_event, requires_grad=True,
                                                           use_args_feats=use_args_feats,
                                                           use_binary_feats=use_binary_feats,
                                                           other_clusters=other_clusters)
-        # mention_pair_tensor有问题
+
         if not mention_pair_tensor.requires_grad:
             logging.info('mention_pair_tensor does not require grad ! (warning)')
 
         tensors_list.append(mention_pair_tensor)
-
         q = 1.0 if pair[0].gold_tag == pair[1].gold_tag else 0.0
         q_tensor = float_to_tensor(q, device)
         q_list.append(q_tensor)
@@ -1346,10 +1395,10 @@ def train(cluster_pairs, model, optimizer, loss_function, device, topic_docs, ep
             total_loss += loss.item()
 
             if samples_count % config_dict["log_interval"] == 0:
-                print('epoch {}, topic {}/{} - {} model '
-                      ' [{}/{} ({:.0f}%)]  Loss: {:.6f}'.format(
-                    epoch,topics_counter, topics_num, mode, samples_count, len(pairs),
-                    100. * samples_count / len(pairs), (total_loss/float(batches_count))))
+                logging.info('epoch {}, topic {}/{} - {} model [{}/{} ({:.0f}%)]  Loss: {:.6f}'.format(
+                    epoch, topics_counter, topics_num, mode, samples_count, len(pairs),
+                    100. * samples_count / len(pairs), (total_loss/float(batches_count)))
+                )
 
             del batch_tensor, q_tensor
 
@@ -1377,6 +1426,7 @@ def cluster_pair_to_mention_pair(pair):
 def cluster_pairs_to_mention_pairs(cluster_pairs):
     '''
     Generates all mention pairs between all cluster pairs
+
     :param cluster_pairs: cluster pairs (tuples of two Cluster objects)
     :return: a list contains tuples of Mention object pairs (EventMention/EntityMention)
     '''
@@ -1431,12 +1481,13 @@ def test_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_e
 
 
 def get_batches(mention_pairs, batch_size):
-    '''
+    """
     Splits the mention pairs to batches (specifically this function used during inference time)
+
     :param mention_pairs: a list contains a tuples of mention pairs
     :param batch_size: the batch size (integer)
     :return: list of lists, when each inner list contains each batch's pairs
-    '''
+    """
     batches = [mention_pairs[i:i + batch_size] for i in
                range(0, len(mention_pairs),batch_size) if i + batch_size < len(mention_pairs)]
     diff = len(mention_pairs) - len(batches)*batch_size
@@ -1458,48 +1509,58 @@ def key_with_max_val(d):
     return k[v.index(best_score)], best_score
 
 
-def merge_clusters(pair_to_merge, clusters ,other_clusters, is_event,
-                   model, device, topic_docs, curr_pairs_dict,
-                   use_args_feats, use_binary_feats):
-    '''
+def merge_clusters(pair_to_merge: Tuple[Cluster, Cluster],
+                   clusters: List[Cluster], other_clusters: List[Cluster],
+                   is_event, model, device, topic_docs: Dict[str, Document],
+                   candidate_pairs: Dict[Tuple[Cluster, Cluster], float],
+                   use_args_feats, use_binary_feats) -> None:
+    """
     This function:
-    1. Merges a cluster pair and update its span vector (average of all its mentions' span
-    representations)
-    2. Removes the merged pair from the clusters list and the scores dict
-    3. Removes from the pair-score dict all the pairs that contain one of the merged clusters
-    4. Creates new cluster pairs
-    5. Adds the new pairs to the pair-score dict and lets the model to assign score to each pair
+        - 基于 *pair_to_merge* 中的两个旧簇, 进行合并, 创建新簇, 并计算新簇的mentions, lex_vec,
+          arg0_vec, arg1_vec, time_vec, loc_vec.
+        - 更新当前簇*clusters*：
+          1. 删除旧簇
+          2. 添加新簇
+        - 更新候选簇对*candidate_pairs*:
+          1. 删除旧簇对(所有涉及旧簇的簇对);
+          2. 添加新簇对(新簇和当前每个簇各组成一个新簇对).
+
     :param pair_to_merge: a tuple of two Cluster objects that were chosen to get merged.
-    :param clusters: current event/entity clusters (of the same type of pair_to_merge)
-    :param other_clusters: should be the current event clusters if clusters are entity clusters
-     and vice versa.
-    :param is_event: True if pair_to_merge is an event pair  and False if they it's an
-    entity pair.
+    :param clusters: 所有此类簇。current event/entity clusters (of the same type of pair_to_merge)
+    :param other_clusters: 所有它类簇。should be the current event clusters if clusters are entity clusters and vice versa.
+    :param is_event: True if pair_to_merge is an event pair  and False if they it's an entity pair.
     :param model: CDCorefModel object
     :param device: Pytorch device object
     :param topic_docs: current topic's documents
-    :param curr_pairs_dict: dictionary contains the current candidate cluster pairs
-    :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate
-    them.
-    :param use_binary_feats: whether to use the binary coreference features or to ablate
-    them.
-    '''
+    :param candidate_pairs: 所有候选簇对及其得分。dictionary contains the current candidate cluster pairs
+    :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate them.
+    :param use_binary_feats: whether to use the binary coreference features or to ablate them.
+    :return: No return. *clusters* updated, *candidate_pairs* updated.
+    """
     cluster_i = pair_to_merge[0]
     cluster_j = pair_to_merge[1]
+
+    # 新簇的创建
     new_cluster = Cluster(is_event)
+
+    # 新簇的指称
     new_cluster.mentions.update(cluster_j.mentions)
     new_cluster.mentions.update(cluster_i.mentions)
 
-    keys_pairs_dict = list(curr_pairs_dict.keys())
+    # 候选簇对:删除旧簇对
+    keys_pairs_dict: List[Tuple[Cluster, Cluster]] = list(candidate_pairs.keys())
     for pair in keys_pairs_dict:
         cluster_pair = (pair[0], pair[1])
         if cluster_i in cluster_pair or cluster_j in cluster_pair:
-            del curr_pairs_dict[pair]
+            del candidate_pairs[pair]
 
+    # 本类簇列表:删除旧簇
     clusters.remove(cluster_i)
     clusters.remove(cluster_j)
+    # 本类簇列表:添加新簇
     clusters.append(new_cluster)
 
+    # 新簇的向量
     if is_event:
         lex_vec = create_event_cluster_bow_lexical_vec(new_cluster, model, device,
                                                        use_char_embeds=True,
@@ -1508,42 +1569,42 @@ def merge_clusters(pair_to_merge, clusters ,other_clusters, is_event,
         lex_vec = create_entity_cluster_bow_lexical_vec(new_cluster, model, device,
                                                         use_char_embeds=True,
                                                         requires_grad=False)
-
     new_cluster.lex_vec = lex_vec
 
-    # create arguments features for the new cluster
+    # 新簇的语义依存向量 create arguments features for the new cluster
     update_args_feature_vectors([new_cluster], other_clusters, model, device, is_event)
 
+    # 候选簇对：添加新簇对
     new_pairs = []
     for cluster in clusters:
         if cluster != new_cluster:
             new_pairs.append((cluster, new_cluster))
-
     # create scores for the new pairs
     for pair in new_pairs:
         pair_score = assign_score(pair, model, device, topic_docs, is_event,
                                   use_args_feats, use_binary_feats, other_clusters)
-        curr_pairs_dict[pair] = pair_score
+        candidate_pairs[pair] = pair_score
 
 
 def assign_score(cluster_pair, model, device, topic_docs, is_event, use_args_feats,
                  use_binary_feats, other_clusters):
-    '''
+    """
     Assigns coreference (or quality of merge) score to a cluster pair by averaging the mention-pair
     scores predicted by the model.
+
     :param cluster_pair: a tuple of two Cluster objects
     :param model: CDCorefScorer object
     :param device: Pytorch device
     :param topic_docs: current topic's documents
     :param is_event: True if cluster_pair is an event pair and False if it's an entity pair
     :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate
-    them.
+        them.
     :param use_binary_feats: whether to use the binary coreference features or to ablate
-    them.
+        them.
     :param other_clusters: should be the current event clusters if cluster_pair is an entity pair
-     and vice versa.
+        and vice versa.
     :return: The average mention pairwise score
-    '''
+    """
     mention_pairs = cluster_pair_to_mention_pair(cluster_pair)
     batches = get_batches(mention_pairs, 256)
     pairs_count = 0
@@ -1564,21 +1625,25 @@ def assign_score(cluster_pair, model, device, topic_docs, is_event, use_args_fea
     return scores_sum/float(pairs_count)
 
 
-def merge(clusters, cluster_pairs, other_clusters,model, device, topic_docs, epoch, topics_counter,
-          topics_num, threshold, is_event, use_args_feats, use_binary_feats):
-    '''
-    Merges cluster pairs in agglomerative manner till it reaches a pre-defined threshold. In each step, the function merges
-    cluster pair with the highest score, and updates the candidate cluster pairs according to the
+def merge(clusters: List[Cluster],
+          pairs: List[Tuple[Cluster, Cluster]], other_clusters: List[Cluster],
+          model: CDCorefScorer, device: torch.cuda.device,
+          topic_docs, epoch, topics_counter,
+          topics_num, threshold, is_event, use_args_feats, use_binary_feats) -> None:
+    """
+    Merges cluster pairs in agglomerative manner till it reaches a pre-defined
+    threshold. In each step, the function merges the cluster pair with the
+    highest score, and updates the candidate cluster pairs according to the
     current merge.
-    Note that all Cluster objects in clusters should have the same type (event or entity but
-    not both of them).
-    other_clusters are fixed during merges and should have the opposite type
-    i.e. if clusters are event clusters, so other_clusters will be the entity clusters.
 
-    :param clusters: a list of Cluster objects of the same type (event/entity)
-    :param cluster_pairs: a list of the cluster pairs (tuples)
-    :param other_clusters: a list of Cluster objects with the opposite type to clusters.
-    Stays fixed during merging operations on clusters.
+    Note that all Cluster objects in *clusters* should have the same type (event
+    or entity but not both of them).
+
+    Note that *clusters* are updated and *other_clusters* are fixed during merges.
+
+    :param clusters: a list of event/entity Cluster objects.
+    :param pairs: a list of all candidate cluster pairs.
+    :param other_clusters: a list of entity/event Cluster objects (with the opposite type to *clusters*) .
     :param model: CDCorefScorer object with the same type as clusters.
     :param device: Pytorch device
     :param topic_docs: current topic's documents
@@ -1587,44 +1652,37 @@ def merge(clusters, cluster_pairs, other_clusters,model, device, topic_docs, epo
     :param topics_num: total number of topics
     :param threshold: merging threshold
     :param is_event: True if clusters are event clusters and false if they are entity clusters
-    :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate
-    them.
+    :param use_args_feats: whether to use the semantically-dependent mention vectors or to ablate them.
     :param use_binary_feats: whether to use the binary coreference features or to ablate
-    '''
-    print('Initialize cluster pairs scores... ')
+    :return: No return. But *clusters* are updated.
+    """
     logging.info('Initialize cluster pairs scores... ')
     # initializes the pairs-scores dict
-    pairs_dict = {}
+    pairs_dict: Dict[Tuple[Cluster, Cluster], float] = {}
     mode = 'event' if is_event else 'entity'
-    # init the scores (that the model assigns to the pairs)
-    for pair in cluster_pairs:
+    # 为每个簇对预测得分 init the scores (that the model assigns to the pairs)
+    for pair in pairs:
         pair_score = assign_score(pair, model, device, topic_docs, is_event,
-                                  use_args_feats,use_binary_feats, other_clusters)
+                                  use_args_feats, use_binary_feats, other_clusters)
         pairs_dict[pair] = pair_score
-
+    # 迭代的凝聚
     while True:
         # finds max pair (break if we can't find one  - max score < threshold)
         if len(pairs_dict) < 2:
-            print('Less the 2 clusters had left, stop merging!')
             logging.info('Less the 2 clusters had left, stop merging!')
             break
         max_pair, max_score = key_with_max_val(pairs_dict)
-
+        # 凝聚一下
         if max_score > threshold:
-            print('epoch {} topic {}/{} - merge {} clusters with score {} clusters : {} {}'.format(
-                epoch, topics_counter, topics_num, mode, str(max_score), str(max_pair[0]),
-                str(max_pair[1])))
             logging.info('epoch {} topic {}/{} - merge {} clusters with score {} clusters : {} {}'.format(
                 epoch, topics_counter, topics_num, mode, str(max_score), str(max_pair[0]),
                 str(max_pair[1])))
             merge_clusters(max_pair, clusters, other_clusters, is_event,
-                           model, device, topic_docs, pairs_dict, use_args_feats,
-                           use_binary_feats)
+                           model, device, topic_docs, pairs_dict,
+                           use_args_feats, use_binary_feats)
+        # 停止凝聚
         else:
-            print('Max score = {} is lower than threshold = {},'
-                  ' stopped merging!'.format(max_score, threshold))
-            logging.info('Max score = {} is lower than threshold = {},' \
-                         ' stopped merging!'.format(max_score, threshold))
+            logging.info('Max score = {} is lower than threshold = {}, stopped merging!'.format(max_score, threshold))
             break
 
 
@@ -1714,7 +1772,6 @@ def test_models(
 
             logging.info('=========================================================================')
             logging.info('Topic {}:'.format(topic_id))
-            print('\nTopic {}:'.format(topic_id))
 
             # 初始化：实体和事件抽取(使用真实事件和实体mention)
             event_mentions, entity_mentions = topic_to_mention_list(
@@ -1732,8 +1789,6 @@ def test_models(
             create_mention_span_representations(entity_mentions, cd_entity_model, device,
                                                 topic.docs, is_event=False,
                                                 requires_grad=False)
-            print('number of event mentions : {}'.format(len(event_mentions)))
-            print('number of entity mentions : {}'.format(len(entity_mentions)))
             logging.info('number of event mentions : {}'.format(len(event_mentions)))
             logging.info('number of entity mentions : {}'.format(len(entity_mentions)))
             topic.event_mentions = event_mentions
@@ -1760,11 +1815,9 @@ def test_models(
 
             # 初始化结束，开始主循环
             for i in range(1,config_dict["merge_iters"]+1):
-                print('Iteration number {}'.format(i))
                 logging.info('Iteration number {}'.format(i))
 
                 # Merge entities
-                print('Merge entity clusters...')
                 logging.info('Merge entity clusters...')
                 test_model(clusters=topic_entity_clusters, other_clusters=topic_event_clusters,
                            model=cd_entity_model, device=device, topic_docs=topic.docs,is_event=False,epoch=epoch,
@@ -1773,7 +1826,6 @@ def test_models(
                            use_args_feats=config_dict["use_args_feats"],
                            use_binary_feats=config_dict["use_binary_feats"])
                 # Merge events
-                print('Merge event clusters...')
                 logging.info('Merge event clusters...')
                 test_model(clusters=topic_event_clusters, other_clusters=topic_entity_clusters,
                            model=cd_event_model,device=device, topic_docs=topic.docs, is_event=True,epoch=epoch,
@@ -1843,7 +1895,6 @@ def test_models(
         return event_b3_f1, entity_b3_f1
 
     else:
-        print('Using predicted mentions, can not calculate CoNLL F1')
         logging.info('Using predicted mentions, can not calculate CoNLL F1')
         return 0,0
 
@@ -2011,8 +2062,6 @@ def save_mention_representations(clusters, out_dir, is_event):
         for mention_id, mention in cluster.mentions.items():
             mention_rep = mention_to_rep(mention)
             mention_to_rep_dict[(mention.mention_str, mention.gold_tag)] = mention_rep
-
-    print(len(mention_to_rep_dict))
     filename = 'event_mentions_to_rep_dict' if is_event else 'entity_mentions_to_rep_dict'
     with open(os.path.join(out_dir, filename), 'wb') as f:
         cPickle.dump(mention_to_rep_dict, f)

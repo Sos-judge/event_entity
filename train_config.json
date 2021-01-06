@@ -1,21 +1,25 @@
 {
+    "train_path": "data/processed/cybulska_setup/full_swirl_ecb/training_data",
+    "dev_path": "data/processed/cybulska_setup/full_swirl_ecb/dev_data",
+
+    "wd_entity_coref_file": "data/external/stanford_neural_wd_entity_coref_out/ecb_wd_coref.json",
+
+    "glove_path": "data/external/char_embed/glove.6B.300d.txt",
+
+    "use_pretrained_char": true,
+    "char_pretrained_path": "data/external/char_embed/glove.840B.300d-char.npy",
+    "char_vocab_path": "data/external/char_embed/glove.840B.300d-char.vocab",
+    "char_rep_size": 50,
+
     "gpu_num": 0,
     "epochs": 50,
     "batch_size": 16,
     "feature_size": 50,
 
-    "char_rep_size": 50,
-    "dev_path": "data/processed/cybulska_setup/full_swirl_ecb/dev_data",
     "dev_th_range": [0.5, 0.6],
 
     "entity_merge_threshold": 0.5,
     "event_merge_threshold": 0.5,
-
-
-    "glove_path": "data/external/char_embed/glove.6B.300d.txt",
-    "use_pretrained_char": true,
-    "char_pretrained_path": "data/external/char_embed/glove.840B.300d-char.npy",
-    "char_vocab_path": "data/external/char_embed/glove.840B.300d-char.vocab",
 
     "load_predicted_topics": false,
     "log_interval": 32,
@@ -34,13 +38,11 @@
 
     "train_init_wd_entity_with_gold": true,
     "test_use_gold_mentions": true,
-    "train_path": "data/processed/cybulska_setup/full_swirl_ecb/training_data",
     "use_args_feats": true,
     "use_binary_feats": true,
     "use_diff": false,
     "use_mult": true,
 
-    "wd_entity_coref_file": "data/external/stanford_neural_wd_entity_coref_out/ecb_wd_coref.json",
     "weight_decay": 0
 
 }

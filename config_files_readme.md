@@ -41,19 +41,26 @@ The provided `train_config.json` file is configured to train joint model for cro
 
 Most of the attributes are self-explained (e.g. batch_size and lr) , but there are few who need
 to be explained:
-* `char_pretrained_path/char_vocab_path` - initial character embeddings (provided in this repo at data/external/char_embed). 
+* `train_path/dev_path` - path to the pickle files of the train/dev sets, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
+* `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
+* `glove_path` - glove的词嵌入文件。path to pre-trained word embeddings. We used glove.5B.300d which can be downloaded from *https://nlp.stanford.edu/projects/glove/*.
+* `use_pretrained_char` - False, use one-hot char embeddings; True, use Glove char embeddings.
+* `char_pretrained_path/char_vocab_path` - glove的字符嵌入文件。前者存有94行向量，后者存有94个字符，一一对应，此向量即为此字符的嵌入。
+    当use_pretrained_char为True时，从此路径读取glove字符嵌入文件。
+    initial character embeddings (provided in this repo at data/external/char_embed). 
     The original embeddings are available at *https://github.com/minimaxir/char-embeddings*.
 * `char_rep_size` - the character LSTM's hidden size.
 * `feature_size` - embedding size of binary features.
-* `glove_path` - path to pre-trained word embeddings. We used glove.6B.300d which can be downloaded from *https://nlp.stanford.edu/projects/glove/*.
-* `train_path/dev_path` - path to the pickle files of the train/dev sets, created by the build_features script (and can be downloaded from *https://drive.google.com/open?id=197jYq5lioefABWP11cr4hy4Ohh1HMPGK*).
 * `dev_th_range` - threshold range to tune on the validation set.
 * `entity_merge_threshold/event_merge_threshold` - merge threshold during training (for entities/events).
 * `merge_iters` -  for how many iterations to run the agglomerative clustering step (during both training and testing). We used 2 iterations.
 * `patient` - for how many epochs we allow the model continue training without an improvement on the dev set.
 * `use_args_feats` - whether to use argument/predicate vectors.
+    if is true, v_i,j = (v(m_i); v(m_j); v(m_i)-v(m_j); v(m_i)*v(m_j); f(i,j))
+    if is false, v_i,j = (v(m_i); v(m_j); v(m_i)-v(m_j); v(m_i)*v(m_j))
 * `use_binary_feats` -  whether to use the coreference binary features.
-* `wd_entity_coref_file` - a path to a file (provided in this repo) which contains the predictions of a WD entity coreference system on the ECB+. We used CoreNLP for that purpose.
+    If is true, v(m) = (s(m); d(m));
+    If is false, v(m) = s(m).
 
 
 ## Configuration file for testing (test_config.json):

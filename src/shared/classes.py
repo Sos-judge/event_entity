@@ -1,4 +1,5 @@
 from collections import defaultdict
+import torch
 
 
 class Corpus(object):
@@ -424,7 +425,7 @@ class Mention(object):
         self.loc_vec = None
         self.time_vec = None
 
-        self.head_elmo_embeddings = None
+        self.head_elmo_embeddings: torch.Tensor = None
 
     def __eq__(self, other):
         for key in self.__dict__.keys():
@@ -653,8 +654,14 @@ class Cluster(object):
     '''
     def __init__(self, is_event):
         self.cluster_id = 0
-        self.mentions = {}  # mention's dictionary, key is a mention id and value is a Mention object (either event or entity)
+        self.mentions = {}
+        """
+        A mentions dictionary of this cluster.
+        Key is mention id.
+        Value is a Mention object (either event or entity)
+        """
         self.is_event = is_event
+        """This cluster is event cluster or entity cluster."""
         self.merged = False
         self.lex_vec = None
         self.arg0_vec = None
