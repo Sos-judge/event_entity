@@ -12,7 +12,7 @@
     "char_rep_size": 50,
 
     "gpu_num": 0,
-    "epochs": 50,
+    "epochs": 10,
     "batch_size": 16,
     "feature_size": 50,
 

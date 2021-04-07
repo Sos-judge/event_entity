@@ -691,14 +691,13 @@ def save_check_point(model, fname):
     torch.save(model, fname)
 
 
-def load_check_point(fname):
+def load_check_point(fname, config_dict):
     '''
     Loads Pytorch model from a file
     :param fname: model's filename
     :return:Pytorch model
     '''
-    from src.config import config_dict
-    if config_dict["use_cuda"]:
+    if config_dict["gpu_num"] != -1: # gpu_num =-1时使用cpu 原先写的是use_cuda 但是配置文件里没有该词条
         return torch.load(fname)
     else:
         return torch.load(fname, map_location=torch.device('cpu'))
@@ -1758,9 +1757,19 @@ def test_models(
         # test_set本来就是按照ecb真实文档聚类组织的，无需处理
         topics = test_set.topics  # use the gold sub-topics
 
+    # while len(topics.keys()) != 2:
+    #     if len(topics.keys()) > 2:
+    #         topics.popitem()
+    #     else:
+    #         pass
+    #
+    # """
+    # 减少topic以方便检查代码(仅训练使用)
+    # """
     topics_num = len(topics.keys())
     topics_keys = topics.keys()  # topic_keys=[1,2,3,4,...,20]
-    epoch = 0  #
+
+    epoch = 0  # 训练模型时，每次测试模型过程的epoch没有传递过来，而是在这里新建了一个epoch=0，因此会发生显示不对应的情况，但对想要达到的结果没有影响。
     all_event_mentions = []
     all_entity_mentions = []
 

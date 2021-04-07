@@ -238,7 +238,6 @@ def write_mention_based_wd_clusters(corpus, is_event, is_gold, out_file):
                     if mention.doc_id not in doc_names_to_new_coref_id:
                         next_doc_increment += doc_increment
                         doc_names_to_new_coref_id[mention.doc_id] = next_doc_increment
-
                     coref_chain += doc_names_to_new_coref_id[mention.doc_id]
 
                     out_coref.write('{}\t({})\n'.format(generic,coref_chain))

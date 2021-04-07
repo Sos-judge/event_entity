@@ -50,6 +50,7 @@ to be explained:
     initial character embeddings (provided in this repo at data/external/char_embed). 
     The original embeddings are available at *https://github.com/minimaxir/char-embeddings*.
 * `char_rep_size` - the character LSTM's hidden size.
+* `epochs` - 实际的训练次数
 * `feature_size` - embedding size of binary features.
 * `dev_th_range` - threshold range to tune on the validation set.
 * `entity_merge_threshold/event_merge_threshold` - merge threshold during training (for entities/events).

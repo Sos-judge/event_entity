@@ -14,6 +14,8 @@ import numpy as np
 from scorer import *
 import _pickle as cPickle
 
+from src.all_models.model_utils import test_models
+
 for pack in os.listdir("src"):
     sys.path.append(os.path.join("src", pack))
 

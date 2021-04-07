@@ -503,7 +503,7 @@ def read_ecb_plus_doc(selected_sent_list: List[int],
             accordance check needed)
           - sg_sm_id: id of the sg_sm.( A sg_i has only one sg_sm, no accordance check 
             needed)
-          - doc_id:
+          - doc_id: id of the doc
 
         - t_id_list:[t_id, t_id, ...], t_id of all(in cur doc) the t that refer to
           this sg_i. But it is None because we do not need this, the varable sg_i_tidlist

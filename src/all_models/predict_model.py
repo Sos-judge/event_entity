@@ -32,7 +32,7 @@ sys.path.append(projectRootPath)
 名字，不能对应，你反序列化之后识别不了。所以权宜之计是先按原来的方法import一遍
 '''
 sys.path.append(os.path.abspath(os.path.join(projectRootPath, "shared")))
-from classes import *
+from src.shared.classes import *
 
 # 设置命令行参数
 import argparse

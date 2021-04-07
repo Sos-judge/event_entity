@@ -31,8 +31,8 @@ from src.all_models.model_utils import generate_cluster_pairs
 from src.all_models.model_utils import train, merge
 from src.all_models.model_utils import create_mention_span_representations
 from src.all_models.model_utils import mention_list_to_gold_wd_cluster_list, mention_list_to_singleton_cluster_list
-
-
+from src.all_models.model_utils import test_models
+from src.all_models.model_utils import save_check_point, load_check_point
 
 # parse the arguments in command
 parser = argparse.ArgumentParser(description='Training a regressor')
@@ -432,6 +432,10 @@ def main():
     with open('output/trainGlobal.pkl', 'wb') as f:
         cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
     """
+    load_model_embeddings(config_dict)
+    with open('output/trainGlobal.pkl', 'wb') as f:
+        cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
+
     with open('output/trainGlobal.pkl', 'rb') as f:
         word_embeds, word_to_ix, char_embeds, char_to_ix = cPickle.load(f)
 
@@ -463,6 +467,11 @@ def main():
             '1_ecbplus': a Topic object
         }
     """
+    for i in range(0, 30):
+        topics.popitem()
+    """
+        减少主题以方便测试，真正用的时候这块要记得删掉
+        """
     topics_num = len(topics.keys())
     event_best_dev_f1 = 0
     entity_best_dev_f1 = 0
@@ -474,7 +483,7 @@ def main():
     orig_entity_th = config_dict["entity_merge_threshold"]
     """ original value of config_dict["entity_merge_threshold"]    """
 
-    for epoch in range(1, config_dict["epochs"]):  # run the whole data set *epoch* times
+    for epoch in range(1, config_dict["epochs"] + 1):  # run the whole data set *epoch* times
         logging.info('Epoch {}:'.format(str(epoch)))
 
         topics_keys = list(topics.keys())  # ['1_ecb', '3_ecb', '4_ecb', '6_ecb', '7_ecb',...]
@@ -558,7 +567,6 @@ def main():
                                 loss=cd_event_loss, device=device, topic=cur_topic, is_event=True, epoch=epoch,
                                 topics_counter=topics_counter, topics_num=topics_num,
                                 threshold=event_th)
-
         # 2. testing models on whole dev set once (one epoch)
         logging.info('Testing models on dev set...')
 
@@ -569,14 +577,16 @@ def main():
 
         if event_best_dev_f1 > 0:
             best_saved_cd_event_model = load_check_point(os.path.join(args.out_dir,
-                                                                      'cd_event_best_model'))
+                                                                      'cd_event_best_model'),
+                                                         config_dict)
             best_saved_cd_event_model.to(device)
         else:
             best_saved_cd_event_model = cd_event_model
 
         if entity_best_dev_f1 > 0:
             best_saved_cd_entity_model = load_check_point(os.path.join(args.out_dir,
-                                                                       'cd_entity_best_model'))
+                                                                       'cd_entity_best_model'),
+                                                          config_dict)
             best_saved_cd_entity_model.to(device)
         else:
             best_saved_cd_entity_model = cd_entity_model
@@ -585,10 +595,59 @@ def main():
             for entity_threshold in threshold_list:
                 config_dict["event_merge_threshold"] = event_threshold
                 config_dict["entity_merge_threshold"] = entity_threshold
-                print('Early Stopping!')
+                # print('Early Stopping!')
+                print('Testing models on dev set with threshold={}'.format((event_threshold, entity_threshold)))
+                logging.info('Testing models on dev set with threshold={}'.format((event_threshold, entity_threshold)))
+                # test event coref on dev
+                event_f1, _ = test_models(dev_set, cd_event_model, best_saved_cd_entity_model, device,
+                                          config_dict, write_clusters=False, out_dir=args.out_dir,
+                                          doc_to_entity_mentions=doc_to_entity_mentions, analyze_scores=False)
+
+                # test entity coref on dev
+                _, entity_f1 = test_models(dev_set, best_saved_cd_event_model, cd_entity_model, device,
+                                           config_dict, write_clusters=False, out_dir=args.out_dir,
+                                           doc_to_entity_mentions=doc_to_entity_mentions, analyze_scores=False)
+
+                if event_f1 > best_event_f1_for_th:
+                    best_event_f1_for_th = event_f1
+                    best_event_th = (event_threshold, entity_threshold)
+
+                if entity_f1 > best_entity_f1_for_th:
+                    best_entity_f1_for_th = entity_f1
+                    best_entity_th = (event_threshold, entity_threshold)
+
+        event_f1 = best_event_f1_for_th
+        entity_f1 = best_entity_f1_for_th
+        save_epoch_f1(event_f1, entity_f1, epoch, best_event_th, best_entity_th)
+        config_dict["event_merge_threshold"] = orig_event_th
+        config_dict["entity_merge_threshold"] = orig_entity_th
+
+        if event_f1 > event_best_dev_f1:
+            event_best_dev_f1 = event_f1
+            best_event_epoch = epoch
+            save_check_point(cd_event_model, os.path.join(args.out_dir, 'cd_event_best_model'))
+            improved = True
+            patient_counter = 0
+        if entity_f1 > entity_best_dev_f1:
+            entity_best_dev_f1 = entity_f1
+            best_entity_epoch = epoch
+            save_check_point(cd_entity_model, os.path.join(args.out_dir, 'cd_entity_best_model'))
+            improved = True
+            patient_counter = 0
+
+        if not improved:
+            patient_counter += 1
+
+        save_training_checkpoint(epoch, cd_event_model, cd_event_optimizer, event_best_dev_f1,
+                                     filename=os.path.join(args.out_dir, 'cd_event_model_state'))
+        save_training_checkpoint(epoch, cd_entity_model, cd_entity_optimizer, entity_best_dev_f1,
+                                     filename=os.path.join(args.out_dir, 'cd_entity_model_state'))
+
+        if patient_counter >= config_dict["patient"]:
+            logging.info('Early Stopping!')
+            print('Early Stopping!')
             save_summary(event_best_dev_f1, entity_best_dev_f1, best_event_epoch, best_entity_epoch, epoch)
             break
-
 
 if __name__ == '__main__':
     main()
