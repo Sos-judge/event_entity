@@ -153,6 +153,8 @@ def train_and_merge(clusters: List[Cluster], other_clusters: List[Cluster],
     # 2. 根据(实体/事件)指称向量，更新(实体/事件)指称对打分函数
     #   生成数据
     train_cluster_pairs, test_cluster_pairs = generate_cluster_pairs(clusters, is_train=True)
+
+
     #   训练打分函数
     train(train_cluster_pairs, model, optimizer, loss,
           device, topic.docs, epoch, topics_counter, topics_num, config_dict, is_event,
@@ -432,9 +434,9 @@ def main():
     with open('output/trainGlobal.pkl', 'wb') as f:
         cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
     """
-    load_model_embeddings(config_dict)
-    with open('output/trainGlobal.pkl', 'wb') as f:
-        cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
+    # load_model_embeddings(config_dict)
+    # with open('output/trainGlobal.pkl', 'wb') as f:
+    #     cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
 
     with open('output/trainGlobal.pkl', 'rb') as f:
         word_embeds, word_to_ix, char_embeds, char_to_ix = cPickle.load(f)
@@ -467,7 +469,7 @@ def main():
             '1_ecbplus': a Topic object
         }
     """
-    for i in range(0, 30):
+    for i in range(0, 48):
         topics.popitem()
     """
         减少主题以方便测试，真正用的时候这块要记得删掉

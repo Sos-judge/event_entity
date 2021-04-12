@@ -1,3 +1,4 @@
+import copy
 import os
 import sys
 import json
@@ -472,7 +473,7 @@ def is_system_coref(mention_id_1, mention_id_2, clusters):
     return False
 
 
-def create_args_features_vec(mention_1, mention_2 ,entity_clusters, device, model):
+def create_args_features_vec(mention_1, mention_2, entity_clusters, device, model):
     '''
     Creates a vector for four binary features (one for each role - Arg0/Arg1/location/time)
     indicate whether two event mentions share a coreferrential argument in the same role.
@@ -822,8 +823,8 @@ def create_event_cluster_bow_lexical_vec(event_cluster: Cluster, model: CDCorefS
     - 簇向量 = 簇内指称向量的平均值。
     - If *use_char_embeds* is true, 指称向量s(m) = (词级指称向量(m);字级指称向量(m));
     - If *use_char_embeds* is false, 指称向量s(m) = (词级指称向量(m));
-    - 词级指称(m) = 指称内各词的glove词向量的平均值。
-    - 字级嵌入(m) = ?
+    - 词级嵌入(m) = 指称内head word的glove词向量的平均值。
+    - 字级嵌入(m) = 指称内head word的glove字向量的平均值。
 
     :param event_cluster: entity cluster
     :param model: CDCorefScorer model
@@ -906,7 +907,7 @@ def create_entity_cluster_bow_lexical_vec(entity_cluster: Cluster, model: CDCore
             # 1.1 init words_vec
             words_vec = torch.zeros(model.word_embed_dim, requires_grad=requires_grad).to(device).view(1, -1)
             """word level embedding of cur entity mention."""
-            # 1.2 calc words_vec: 实体指称的嵌入等于指称内每个词的嵌入取平均
+            # 1.2 calc words_vec: 实体指称的词级嵌入等于指称内每个词的嵌入取平均
             words_vec_list: List[torch.Tensor] = [find_word_embed(word, model, device)
                                                   for word in entity_mention.get_tokens()
                                                   if not is_stop(word)]
@@ -914,7 +915,7 @@ def create_entity_cluster_bow_lexical_vec(entity_cluster: Cluster, model: CDCore
             for word_vec in words_vec_list:
                 words_vec += word_vec
             words_vec /= len(entity_mention.get_tokens())
-        # 2. get char level embedding of cur entity mention. 字级指称向量
+        # 2. get char level embedding of cur entity mention. 字级指称向量 = 指称的字符串的字向量
         if use_char_embeds:
             chars_vec = get_char_embed(entity_mention.mention_str, model, device)
             """word level embedding of cur entity mention."""
@@ -1268,7 +1269,6 @@ def mention_pair_to_model_input(pair, model, device, topic_docs, is_event, requi
         mention_2_tensor = span_rep_2
 
     # mention_1_tensor 有问题
-
     if model.use_mult and model.use_diff:
         mention_pair_tensor = torch.cat([mention_1_tensor, mention_2_tensor,
                                          mention_1_tensor - mention_2_tensor,
@@ -1332,9 +1332,15 @@ def train_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_
             logging.info('mention_pair_tensor does not require grad ! (warning)')
 
         tensors_list.append(mention_pair_tensor)
-        q = 1.0 if pair[0].gold_tag == pair[1].gold_tag else 0.0
-        q_tensor = float_to_tensor(q, device)
-        q_list.append(q_tensor)
+        if len(pair) == 2:
+            q = 1.0 if pair[0].gold_tag == pair[1].gold_tag else 0.0
+            q_tensor = float_to_tensor(q, device)
+            q_list.append(q_tensor)
+        else:
+            q = pair[2]
+            q_tensor = float_to_tensor(q, device)
+            q_list.append(q_tensor)
+
 
     batch_pairs_tensor = torch.cat(tensors_list, 0)
     q_pairs_tensor = torch.cat(q_list, 0)
@@ -1370,6 +1376,19 @@ def train(cluster_pairs, model, optimizer, loss_function, device, topic_docs, ep
 
     # creates mention pairs and their true labels (creates max 100,000 mention pairs - due to memory constrains)
     pairs = cluster_pairs_to_mention_pairs(cluster_pairs)
+    pairs_2 = cluster_pairs_to_mention_pairs_2(cluster_pairs)
+
+    """
+    假设有三个cluster,分别为cluster1, cluster2, cluster3. cluster1.mentions  {"1" : mention1; "2" : mention2}
+    cluster2.mentions = {"1" : mention3; "2" : mention4} cluster3.mentions = {"1" : mention5; "2" : mention6}
+    
+    pairs = [(mention1,mention3),(mention1,mention4),(mention2,mention3),(mention2,mention4),
+             (mention1,mention5),(mention1,mention6),(mention2,mention5),(mention2,mention6),
+             (mention3,mention5),(mention3,mention6),(mention4,mention5),(mention4,mention6)]
+             
+    pairs_2 = [(mention1,mention3, 1.0), (mention1,mention4, 1.0),(mention2,mention3, 0.0),....]
+    """
+    pairs.extend(pairs_2)
     random.shuffle(pairs)
 
     for reg_epoch in range(0, epochs):
@@ -1415,12 +1434,35 @@ def cluster_pair_to_mention_pair(pair):
     c1_mentions = cluster_1.mentions.values()
     c2_mentions = cluster_2.mentions.values()
 
+
     for mention_1 in c1_mentions:
         for mention_2 in c2_mentions:
             mention_pairs.append((mention_1, mention_2))
 
     return mention_pairs
 
+def cluster_pair_to_mention_pair_2(pair):
+    '''
+    Given a cluster pair, the function extracts all the mention pairs between the two clusters
+    :param pair: a cluster pair (tuple of two Cluster objects)
+    :return: a list contains tuples of Mention object pairs (EventMention/EntityMention)
+    '''
+    mention_pairs = []
+    cluster_1 = pair[0]
+    cluster_2 = pair[1]
+
+    c1_mentions = cluster_1.mentions.values()
+    c2_mentions = cluster_2.mentions.values()
+
+    # 这里要把一个簇内 相同的topic内 共指的指称全部替换
+
+    for mention_1 in c1_mentions:
+        pass
+    for mention_1 in c1_mentions:
+        for mention_2 in c2_mentions:
+            mention_pairs.append((mention_1, mention_2))
+
+    return mention_pairs
 
 def cluster_pairs_to_mention_pairs(cluster_pairs):
     '''
@@ -1438,6 +1480,58 @@ def cluster_pairs_to_mention_pairs(cluster_pairs):
 
         if len(mention_pairs) > th: # up to 100,000 pairs (due to memory constrains)
             break
+
+    return mention_pairs
+
+def cluster_pairs_to_mention_pairs_2(cluster_pairs):
+    '''
+    按照我们的方法生成新的部分数据集
+
+    :param cluster_pairs: cluster pairs (tuples of two Cluster objects)
+    :return: a list contains tuples of Mention object pairs and its score (EventMention/EntityMention)
+    '''
+    mention_pairs = []
+
+
+    for pair in cluster_pairs:
+        cluster_1 = pair[0]
+        cluster_2 = pair[1]
+        c1_mention = cluster_1.mentions.values()
+        c2_mention = cluster_2.mentions.values()
+
+        # 1 加正例
+        th = 50000
+        new_positive_example_count = 0
+        for mention1 in c1_mention:
+            for mention2 in c2_mention:
+                if mention1 is not mention2:
+                    m1 = copy.copy(mention1)
+                    m2 = copy.copy(mention2)
+                    if m1.gold_tag == m2.gold_tag:
+                        m1.mention_str = "xiaoli"
+                        m2.mention_str = "xiaoli"
+                        mention_pairs.append((m1, m2, 1.0))  # 查一下输出 这个输出似乎是（m1, m2）
+                        new_positive_example_count += 1
+                    if new_positive_example_count > th:
+                        break
+
+        # 2 加反例
+        th = 50000
+        new_negative_example_count = 0
+        for mention1 in c1_mention:
+            for mention2 in c2_mention:
+                if mention1 is not mention2:
+                    m1 = copy.copy(mention1)
+                    m2 = copy.copy(mention2)
+                    if m1.gold_tag == m2.gold_tag:
+                        if random.random() < 0.5:
+                            m1.mention_str = "xiaoli"  # 随机选一个m1/2改
+                        else:
+                            m2.mention_str = "xiaoli"
+                        mention_pairs.append((m1, m2, 0.0))
+                        new_negative_example_count += 1
+                    if new_negative_example_count > th:
+                        break
 
     return mention_pairs
 

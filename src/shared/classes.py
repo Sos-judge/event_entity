@@ -540,6 +540,7 @@ class EntityMention(Mention):
                                             mention_str, head_text, head_lemma, is_singleton,
                                             is_continuous, coref_chain)
         self.predicates = {}  # a dictionary contains the entity mention's predicates, key is a predicate's mention id and value is the argument name
+        """predicates里存放的是实体指称的谓词信息，key是一个元组，('谓词指称的文本表示'，'谓词指称的id')，value是论元名称"""
         self.mention_type = mention_type
 
     def __eq__(self, other):
@@ -664,6 +665,7 @@ class Cluster(object):
         """This cluster is event cluster or entity cluster."""
         self.merged = False
         self.lex_vec = None
+        """the lex_vec = average(簇内每个指称的指称向量s(m))"""
         self.arg0_vec = None
         self.arg1_vec = None
         self.loc_vec = None
