@@ -1382,6 +1382,8 @@ def train(cluster_pairs, model, optimizer, loss_function, device, topic_docs, ep
     假设有三个cluster,分别为cluster1, cluster2, cluster3. cluster1.mentions  {"1" : mention1; "2" : mention2}
     cluster2.mentions = {"1" : mention3; "2" : mention4} cluster3.mentions = {"1" : mention5; "2" : mention6}
     
+    cluster_pairs = [(cluster1, cluster2),(cluster1, cluster3),(cluster2, cluster3)]
+    
     pairs = [(mention1,mention3),(mention1,mention4),(mention2,mention3),(mention2,mention4),
              (mention1,mention5),(mention1,mention6),(mention2,mention5),(mention2,mention6),
              (mention3,mention5),(mention3,mention6),(mention4,mention5),(mention4,mention6)]
@@ -1441,28 +1443,6 @@ def cluster_pair_to_mention_pair(pair):
 
     return mention_pairs
 
-def cluster_pair_to_mention_pair_2(pair):
-    '''
-    Given a cluster pair, the function extracts all the mention pairs between the two clusters
-    :param pair: a cluster pair (tuple of two Cluster objects)
-    :return: a list contains tuples of Mention object pairs (EventMention/EntityMention)
-    '''
-    mention_pairs = []
-    cluster_1 = pair[0]
-    cluster_2 = pair[1]
-
-    c1_mentions = cluster_1.mentions.values()
-    c2_mentions = cluster_2.mentions.values()
-
-    # 这里要把一个簇内 相同的topic内 共指的指称全部替换
-
-    for mention_1 in c1_mentions:
-        pass
-    for mention_1 in c1_mentions:
-        for mention_2 in c2_mentions:
-            mention_pairs.append((mention_1, mention_2))
-
-    return mention_pairs
 
 def cluster_pairs_to_mention_pairs(cluster_pairs):
     '''
@@ -1491,50 +1471,128 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
     :return: a list contains tuples of Mention object pairs and its score (EventMention/EntityMention)
     '''
     mention_pairs = []
-
+    cluster_list = []
+    mentions_list = []
+    new_positive_example_count = 0
+    new_negative_example_count = 0
 
     for pair in cluster_pairs:
         cluster_1 = pair[0]
         cluster_2 = pair[1]
-        c1_mention = cluster_1.mentions.values()
-        c2_mention = cluster_2.mentions.values()
+        if cluster_1 not in cluster_list:
+            cluster_list.append(cluster_1)
+        if cluster_2 not in cluster_list:
+            cluster_list.append(cluster_2)
 
-        # 1 加正例
-        th = 50000
-        new_positive_example_count = 0
-        for mention1 in c1_mention:
-            for mention2 in c2_mention:
-                if mention1 is not mention2:
-                    m1 = copy.copy(mention1)
-                    m2 = copy.copy(mention2)
-                    if m1.gold_tag == m2.gold_tag:
-                        m1.mention_str = "xiaoli"
-                        m2.mention_str = "xiaoli"
-                        mention_pairs.append((m1, m2, 1.0))  # 查一下输出 这个输出似乎是（m1, m2）
-                        new_positive_example_count += 1
-                    if new_positive_example_count > th:
-                        break
+    for cluster in cluster_list:
+        cluster_mentions = list(cluster.mentions.values())
+        mentions_list.extend(cluster_mentions)
 
-        # 2 加反例
-        th = 50000
-        new_negative_example_count = 0
-        for mention1 in c1_mention:
-            for mention2 in c2_mention:
-                if mention1 is not mention2:
-                    m1 = copy.copy(mention1)
-                    m2 = copy.copy(mention2)
-                    if m1.gold_tag == m2.gold_tag:
-                        if random.random() < 0.5:
-                            m1.mention_str = "xiaoli"  # 随机选一个m1/2改
-                        else:
-                            m2.mention_str = "xiaoli"
-                        mention_pairs.append((m1, m2, 0.0))
-                        new_negative_example_count += 1
-                    if new_negative_example_count > th:
-                        break
+    cluster_gold_tag_set = set()
+    for mention in mentions_list:
+        cluster_gold_tag_set.add(mention.gold_tag)
 
+    error_cluster_list = []
+    file_error_cluster_list = open('output_test/error_cluster_list.txt', 'a+')
+    file_test_modify = open('output_test/test_modify.txt', 'a+') # 检查修改后的结果，目前仅正例
+    for cluster_gold_tag in cluster_gold_tag_set:
+        # 获得真实的共指指称
+        coref_mentions_1 = []
+        for mention in mentions_list:
+            if mention.gold_tag == cluster_gold_tag:
+                coref_mentions_1.append(copy.deepcopy(mention))
+
+        if isinstance(coref_mentions_1[0], EntityMention): # error: EventMention也进入该if
+            # 找出有错误的真实簇（簇内mention的type不一致，例如"HUM"+"LOC"共存）
+            cur_mention_type = random.choice(coref_mentions_1).mention_type
+            for coref_mention in coref_mentions_1:
+                if coref_mention.mention_type != cur_mention_type:
+                    error_cluster_list.append("%s" % cluster_gold_tag)
+                    file_error_cluster_list.write(cluster_gold_tag)
+                    file_error_cluster_list.write('\n')
+
+            if coref_mentions_1[0].mention_type == "HUM":
+                # 生成正例
+                th = 50000
+                from src.all_models.name_generator import gen_two_words
+                new_mention_str_1 = gen_two_words()
+                for coref_mention in coref_mentions_1:
+                    file_test_modify.write(coref_mention.mention_str)
+                    if not word_is_pron(coref_mention.mention_head_lemma):
+                        coref_mention.mention_str = new_mention_str_1
+                        file_test_modify.write("[" + coref_mention.mention_str + "]; ")
+                    else:
+                        file_test_modify.write("; ")
+
+                for cm1 in coref_mentions_1:
+                    for cm2 in coref_mentions_1:
+                        if cm1 is not cm2:
+                            mention_pairs.append((cm1, cm2, 1.0))
+                            new_positive_example_count += 1
+                        if new_positive_example_count > th:
+                            break
+
+                # 生成反例
+                th = 50000
+                new_mention_str_2 = new_mention_str_1
+                coref_mentions_2 = copy.deepcopy(coref_mentions_1)
+                while new_mention_str_2 == new_mention_str_1:
+                    new_mention_str_2 = gen_two_words()
+
+                # # 生成反例时 只修改除代词词性以外的mention
+                # while True:
+                #     choosed_mention = random.choice(coref_mentions_2)
+                #     if not word_is_pron(choosed_mention.mention_head_lemma):
+                #         choosed_mention.mention_str = new_mention_str_2
+                #         break
+
+                random.choice(coref_mentions_2).mention_str = new_mention_str_2# 生成反例时 随机选取一例修改 不管它的词性
+                for cm1 in coref_mentions_2:
+                    if cm1.mention_str == new_mention_str_2:
+                        for cm2 in coref_mentions_2:
+                            if cm1 is not cm2:
+                                mention_pairs.append((cm1, cm2, 0.0))
+                                mention_pairs.append((cm2, cm1, 0.0))
+                                new_negative_example_count += 1
+                            if new_negative_example_count > th:
+                                break
+
+                file_test_modify.write("\n\n\n")
+
+            elif coref_mentions_1[0].mention_type == "NON":
+                pass
+
+            elif coref_mentions_1[0].mention_type == "LOC":
+                pass
+
+            elif coref_mentions_1[0].mention_type == "TIM":
+                pass
+
+        elif isinstance(coref_mentions_1[0], EventMention):
+            pass
+
+    file_test_modify.write("------------------------------------\n")
+
+    file_error_cluster_list.close()
+    file_test_modify.close()
     return mention_pairs
 
+def word_is_pron(word):
+    """
+    判断单词是否为代词。 判别范围 人称代词+反身代词+物主代词
+    """
+    pron_list = ["I", "me", "my", "mine", "myself",
+                 "we", "us", "our", "ours", "ourselves",
+                 "you", "your", "yours", "yourself", "yourselves",
+                 "he", "him", "his", "himself",
+                 "she", "her", "hers", "herself",
+                 "it", "its", "itself",
+                 "they", "them", "their", "theirs", "themselves"
+                 ]
+    if word not in pron_list:
+        return False
+    else:
+        return True
 
 def test_pairs_batch_to_model_input(batch_pairs, model, device, topic_docs, is_event,
                                      use_args_feats, use_binary_feats, other_clusters):

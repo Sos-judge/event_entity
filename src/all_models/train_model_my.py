@@ -434,9 +434,9 @@ def main():
     with open('output/trainGlobal.pkl', 'wb') as f:
         cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
     """
-    # load_model_embeddings(config_dict)
-    # with open('output/trainGlobal.pkl', 'wb') as f:
-    #     cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
+    load_model_embeddings(config_dict)
+    with open('output/trainGlobal.pkl', 'wb') as f:
+        cPickle.dump((word_embeds, word_to_ix, char_embeds, char_to_ix), f)
 
     with open('output/trainGlobal.pkl', 'rb') as f:
         word_embeds, word_to_ix, char_embeds, char_to_ix = cPickle.load(f)
@@ -469,8 +469,8 @@ def main():
             '1_ecbplus': a Topic object
         }
     """
-    for i in range(0, 48):
-        topics.popitem()
+    # for i in range(0, 48):
+    #     topics.popitem()
     """
         减少主题以方便测试，真正用的时候这块要记得删掉
         """
@@ -492,6 +492,53 @@ def main():
         random.shuffle(topics_keys)
         topics_counter = 0
         """ In cur epoch, how many topics has been processed or being processed. """
+
+        # # 测试 查看是否存在错误的簇，即簇内指称类型不同
+        # file_error_cluster_list = open('output_test/error_cluster_list.txt', 'a+')
+        # for cur_topic_id in topics_keys:
+        #     cur_topic: Topic = topics[cur_topic_id]
+        #     event_mentions, entity_mentions = topic_to_mention_list(cur_topic, is_gold=True)
+        #     # 1.2. initialize entity cluster
+        #     if 1:
+        #         entity_clusters: List[Cluster] = []
+        #         """ entity cluster list. """
+        #         # get entity cluster
+        #         if 1:
+        #             # strategy 1: initial entity clusters = singleton clusters.
+        #             if 0:  # we don't use this strategy.
+        #                 entity_clusters = mention_list_to_singleton_cluster_list(entity_mentions, is_event=False)
+        #             # strategy 2: initial entity clusters = gold WD entity coref clusters.
+        #             elif config_dict["train_init_wd_entity_with_gold"]:
+        #                 entity_clusters = mention_list_to_gold_wd_cluster_list(entity_mentions, is_event=False)
+        #             # strategy 3: initial entity clusters = external WD entity coref clusters
+        #             else:
+        #                 entity_clusters = mention_list_to_external_wd_cluster_list(entity_mentions,
+        #                                                                            doc_to_entity_mentions,
+        #                                                                            is_event=False, )
+        #         # calc entity cluster vector
+        #         update_lexical_vectors(entity_clusters, cd_entity_model, device,
+        #                                is_event=False, requires_grad=False)
+        #     # 1.3. initialize event cluster
+        #     if 1:
+        #         event_clusters: List[Cluster] = []
+        #         """ event Cluster list.  """
+        #         # get event cluster: initial event clusters = singleton clusters.
+        #         event_clusters = mention_list_to_singleton_cluster_list(event_mentions, is_event=True)
+        #         # calc event cluster representation
+        #         update_lexical_vectors(event_clusters, cd_event_model, device,
+        #                                is_event=True, requires_grad=False)
+        #
+        #     for cluster in entity_clusters:
+        #         coref_mention_list = list(cluster.mentions.values())
+        #         cur_mention_type = random.choice(coref_mention_list).mention_type
+        #         for mention in coref_mention_list:
+        #             if mention.mention_type != cur_mention_type:
+        #                 file_error_cluster_list.write(mention.gold_tag)
+        #                 file_error_cluster_list.write('\n')
+        # file_error_cluster_list.close()
+        # print("完成簇内指称类型检查！！！！！！！！！！！！")
+
+
 
         # 1. training models on whole train set once (one epoch)
         """ for each topic in training set """
@@ -545,18 +592,19 @@ def main():
             for i in range(1, config_dict["merge_iters"] + 1):
                 logging.info('Iteration number {}'.format(i))
 
-                # Entities
-                """
-                E_t <- UpdateJointFeatures(V_t)
-                S_E <- TrainMentionPairScorer(E_t; G)
-                E_t <- MergeClusters(S_E; E_t)
-                """
-                logging.info('Train entity model and merge entity clusters...')
-                train_and_merge(clusters=entity_clusters, other_clusters=event_clusters,
-                                model=cd_entity_model, optimizer=cd_entity_optimizer,
-                                loss=cd_entity_loss, device=device, topic=cur_topic, is_event=False, epoch=epoch,
-                                topics_counter=topics_counter, topics_num=topics_num,
-                                threshold=entity_th)
+                # 测试
+                # # Entities
+                # """
+                # E_t <- UpdateJointFeatures(V_t)
+                # S_E <- TrainMentionPairScorer(E_t; G)
+                # E_t <- MergeClusters(S_E; E_t)
+                # """
+                # logging.info('Train entity model and merge entity clusters...')
+                # train_and_merge(clusters=entity_clusters, other_clusters=event_clusters,
+                #                 model=cd_entity_model, optimizer=cd_entity_optimizer,
+                #                 loss=cd_entity_loss, device=device, topic=cur_topic, is_event=False, epoch=epoch,
+                #                 topics_counter=topics_counter, topics_num=topics_num,
+                #                 threshold=entity_th)
                 # Events
                 """
                 V_t <- UpdateJointFeatures(E_t)
