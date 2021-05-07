@@ -471,9 +471,9 @@ def main():
     """
     # for i in range(0, 48):
     #     topics.popitem()
-    """
-        减少主题以方便测试，真正用的时候这块要记得删掉
-        """
+    # """
+    #     减少主题以方便测试，真正用的时候这块要记得删掉
+    #     """
     topics_num = len(topics.keys())
     event_best_dev_f1 = 0
     entity_best_dev_f1 = 0
@@ -539,6 +539,66 @@ def main():
         # print("完成簇内指称类型检查！！！！！！！！！！！！")
 
 
+        # # 测试 输出所有簇
+        # file_cluster_list = open('output_test/cluster_list.txt', 'a+')
+        # for cur_topic_id in topics_keys:
+        #     cur_topic: Topic = topics[cur_topic_id]
+        #     event_mentions, entity_mentions = topic_to_mention_list(cur_topic, is_gold=True)
+        #     # 1.2. initialize entity cluster
+        #     if 1:
+        #         entity_clusters: List[Cluster] = []
+        #         """ entity cluster list. """
+        #         # get entity cluster
+        #         if 1:
+        #             # strategy 1: initial entity clusters = singleton clusters.
+        #             if 0:  # we don't use this strategy.
+        #                 entity_clusters = mention_list_to_singleton_cluster_list(entity_mentions, is_event=False)
+        #             # strategy 2: initial entity clusters = gold WD entity coref clusters.
+        #             elif config_dict["train_init_wd_entity_with_gold"]:
+        #                 entity_clusters = mention_list_to_gold_wd_cluster_list(entity_mentions, is_event=False)
+        #             # strategy 3: initial entity clusters = external WD entity coref clusters
+        #             else:
+        #                 entity_clusters = mention_list_to_external_wd_cluster_list(entity_mentions,
+        #                                                                            doc_to_entity_mentions,
+        #                                                                            is_event=False, )
+        #         # calc entity cluster vector
+        #         update_lexical_vectors(entity_clusters, cd_entity_model, device,
+        #                                is_event=False, requires_grad=False)
+        #     # 1.3. initialize event cluster
+        #     if 1:
+        #         event_clusters: List[Cluster] = []
+        #         """ event Cluster list.  """
+        #         # get event cluster: initial event clusters = singleton clusters.
+        #         event_clusters = mention_list_to_singleton_cluster_list(event_mentions, is_event=True)
+        #         # calc event cluster representation
+        #         update_lexical_vectors(event_clusters, cd_event_model, device,
+        #                                is_event=True, requires_grad=False)
+        #
+        #     for cluster in entity_clusters:
+        #         coref_mention_list = list(cluster.mentions.values())
+        #         random_mention = random.choice(coref_mention_list)
+        #         if random_mention.gold_tag != "INTRA_UNK_36779_31_3ecb" \
+        #                 and random_mention.gold_tag != "INTRA_UNK_35791_31_9ecb":
+        #             if random_mention.mention_type == "HUM":
+        #                 file_cluster_list.write(random_mention.gold_tag)
+        #                 for mention in coref_mention_list:
+        #                     file_cluster_list.write(" ")
+        #                     file_cluster_list.write(mention.mention_str)
+        #                 file_cluster_list.write("\n")
+        #         else:
+        #             file_cluster_list.write(random_mention.gold_tag + "这是一个类型不一致的簇")
+        #             for mention in coref_mention_list:
+        #                 if mention.mention_type == "HUM":
+        #                     file_cluster_list.write(" ")
+        #                     file_cluster_list.write(mention.mention_str)
+        #             for mention in coref_mention_list:
+        #                 if mention.mention_type != "HUM":
+        #                     file_cluster_list.write(" ")
+        #                     file_cluster_list.write("[" + mention.mention_type + "]" + mention.mention_str)
+        #             file_cluster_list.write("\n")
+        # file_cluster_list.close()
+        # print("已输出所有簇！！！！！！！！！！！！")
+
 
         # 1. training models on whole train set once (one epoch)
         """ for each topic in training set """
@@ -591,20 +651,19 @@ def main():
             """
             for i in range(1, config_dict["merge_iters"] + 1):
                 logging.info('Iteration number {}'.format(i))
+                # Entities
+                """
+                E_t <- UpdateJointFeatures(V_t)
+                S_E <- TrainMentionPairScorer(E_t; G)
+                E_t <- MergeClusters(S_E; E_t)
+                """
+                logging.info('Train entity model and merge entity clusters...')
+                train_and_merge(clusters=entity_clusters, other_clusters=event_clusters,
+                                model=cd_entity_model, optimizer=cd_entity_optimizer,
+                                loss=cd_entity_loss, device=device, topic=cur_topic, is_event=False, epoch=epoch,
+                                topics_counter=topics_counter, topics_num=topics_num,
+                                threshold=entity_th)
 
-                # 测试
-                # # Entities
-                # """
-                # E_t <- UpdateJointFeatures(V_t)
-                # S_E <- TrainMentionPairScorer(E_t; G)
-                # E_t <- MergeClusters(S_E; E_t)
-                # """
-                # logging.info('Train entity model and merge entity clusters...')
-                # train_and_merge(clusters=entity_clusters, other_clusters=event_clusters,
-                #                 model=cd_entity_model, optimizer=cd_entity_optimizer,
-                #                 loss=cd_entity_loss, device=device, topic=cur_topic, is_event=False, epoch=epoch,
-                #                 topics_counter=topics_counter, topics_num=topics_num,
-                #                 threshold=entity_th)
                 # Events
                 """
                 V_t <- UpdateJointFeatures(E_t)

@@ -1492,8 +1492,6 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
     for mention in mentions_list:
         cluster_gold_tag_set.add(mention.gold_tag)
 
-    error_cluster_list = []
-    file_error_cluster_list = open('output_test/error_cluster_list.txt', 'a+')
     file_test_modify = open('output_test/test_modify.txt', 'a+') # 检查修改后的结果，目前仅正例
     for cluster_gold_tag in cluster_gold_tag_set:
         # 获得真实的共指指称
@@ -1502,15 +1500,7 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
             if mention.gold_tag == cluster_gold_tag:
                 coref_mentions_1.append(copy.deepcopy(mention))
 
-        if isinstance(coref_mentions_1[0], EntityMention): # error: EventMention也进入该if
-            # 找出有错误的真实簇（簇内mention的type不一致，例如"HUM"+"LOC"共存）
-            cur_mention_type = random.choice(coref_mentions_1).mention_type
-            for coref_mention in coref_mentions_1:
-                if coref_mention.mention_type != cur_mention_type:
-                    error_cluster_list.append("%s" % cluster_gold_tag)
-                    file_error_cluster_list.write(cluster_gold_tag)
-                    file_error_cluster_list.write('\n')
-
+        if isinstance(coref_mentions_1[0], EntityMention):
             if coref_mentions_1[0].mention_type == "HUM":
                 # 生成正例
                 th = 50000
@@ -1532,31 +1522,30 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
                         if new_positive_example_count > th:
                             break
 
-                # 生成反例
-                th = 50000
-                new_mention_str_2 = new_mention_str_1
-                coref_mentions_2 = copy.deepcopy(coref_mentions_1)
-                while new_mention_str_2 == new_mention_str_1:
-                    new_mention_str_2 = gen_two_words()
-
-                # # 生成反例时 只修改除代词词性以外的mention
-                # while True:
-                #     choosed_mention = random.choice(coref_mentions_2)
-                #     if not word_is_pron(choosed_mention.mention_head_lemma):
-                #         choosed_mention.mention_str = new_mention_str_2
-                #         break
-
-                random.choice(coref_mentions_2).mention_str = new_mention_str_2# 生成反例时 随机选取一例修改 不管它的词性
-                for cm1 in coref_mentions_2:
-                    if cm1.mention_str == new_mention_str_2:
-                        for cm2 in coref_mentions_2:
-                            if cm1 is not cm2:
-                                mention_pairs.append((cm1, cm2, 0.0))
-                                mention_pairs.append((cm2, cm1, 0.0))
-                                new_negative_example_count += 1
-                            if new_negative_example_count > th:
-                                break
-
+                # # 生成反例
+                # th = 50000
+                # new_mention_str_2 = new_mention_str_1
+                # coref_mentions_2 = copy.deepcopy(coref_mentions_1)
+                # while new_mention_str_2 == new_mention_str_1:
+                #     new_mention_str_2 = gen_two_words()
+                #
+                # # # 生成反例时 只修改除代词词性以外的mention
+                # # while True:
+                # #     choosed_mention = random.choice(coref_mentions_2)
+                # #     if not word_is_pron(choosed_mention.mention_head_lemma):
+                # #         choosed_mention.mention_str = new_mention_str_2
+                # #         break
+                #
+                # random.choice(coref_mentions_2).mention_str = new_mention_str_2# 生成反例时 随机选取一例修改 不管它的词性
+                # for cm1 in coref_mentions_2:
+                #     if cm1.mention_str == new_mention_str_2:
+                #         for cm2 in coref_mentions_2:
+                #             if cm1 is not cm2:
+                #                 mention_pairs.append((cm1, cm2, 0.0))
+                #                 mention_pairs.append((cm2, cm1, 0.0))
+                #                 new_negative_example_count += 1
+                #             if new_negative_example_count > th:
+                #                 break
                 file_test_modify.write("\n\n\n")
 
             elif coref_mentions_1[0].mention_type == "NON":
@@ -1573,7 +1562,6 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
 
     file_test_modify.write("------------------------------------\n")
 
-    file_error_cluster_list.close()
     file_test_modify.close()
     return mention_pairs
 
