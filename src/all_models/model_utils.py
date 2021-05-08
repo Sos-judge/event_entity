@@ -1502,13 +1502,14 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
 
         if isinstance(coref_mentions_1[0], EntityMention):
             if coref_mentions_1[0].mention_type == "HUM":
+                # 判断mention的mention_str是否为人名
                 # 生成正例
                 th = 50000
                 from src.all_models.name_generator import gen_two_words
                 new_mention_str_1 = gen_two_words()
                 for coref_mention in coref_mentions_1:
                     file_test_modify.write(coref_mention.mention_str)
-                    if not word_is_pron(coref_mention.mention_head_lemma):
+                    if word_is_name(coref_mention.mention_head_lemma):
                         coref_mention.mention_str = new_mention_str_1
                         file_test_modify.write("[" + coref_mention.mention_str + "]; ")
                     else:
@@ -1564,6 +1565,47 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
 
     file_test_modify.close()
     return mention_pairs
+
+def word_is_name(word):
+    """
+    1.mention_str的首个字符若是字母，则可能是人名转2；若不是字母，则不是人名.
+    2.从字典查询mention_str,若没有，则是人名；若有,则可能是人名，转3.
+    3.从常用英文姓名库查询mention_str,若有,则是人名；若没有，则不是人名.
+
+    bug：people.com会被认定为人名， Us weekly / Party Girl也会被认定为人名
+    """
+    import re
+    with open("../../data/external/human_name/english_dictionary.json", 'r') as f:
+        en_dic = json.load(f)
+    if bool(re.search(r'\d', word)): # 如果字符串含有数字 不是人名
+        return False
+    if (word[0] >= "A" and word[0] <= "Z") or (word[0] >= "a" and word[0] <= "z"):
+        if word not in en_dic[word[0]] and word.lower() not in en_dic[word[0].lower()]:
+            return True
+        else:
+            with open("../../data/external/human_name/first_names.all.txt", "r") as file_frist_name:
+                first_name_list = file_frist_name.read().splitlines()
+            with open("../../data/external/human_name/last_names.all.txt", "r") as file_last_name:
+                last_name_list = file_last_name.read().splitlines()
+            word_list = word.split(' ')
+            if len(word_list) == 1:
+                if word_list[0] in first_name_list or word_list[0].lower() in first_name_list:
+                    return True
+                elif word_list[0] in last_name_list or word_list[0].lower() in last_name_list:
+                    return True
+                else:
+                    return False
+            else:
+                if word_list[0] in first_name_list or word_list[0].lower() in first_name_list:
+                    if word_list[1] in last_name_list or word_list[1].lower() in last_name_list:
+                        return True
+                    else:
+                        return False # 名对 姓不对 ？？算人名吗？
+                else:
+                    return False
+    else:
+        return False # 如果mention_str的开头不是英文字母，它就不是一个英文名
+
 
 def word_is_pron(word):
     """
