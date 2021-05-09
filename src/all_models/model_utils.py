@@ -1492,7 +1492,7 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
     for mention in mentions_list:
         cluster_gold_tag_set.add(mention.gold_tag)
 
-    file_test_modify = open('output_test/test_modify.txt', 'a+') # 检查修改后的结果，目前仅正例
+    file_test_modify = open('output_test/test_modify_2.txt', 'a+') # 检查修改后的结果，目前仅正例
     for cluster_gold_tag in cluster_gold_tag_set:
         # 获得真实的共指指称
         coref_mentions_1 = []
@@ -1509,7 +1509,7 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
                 new_mention_str_1 = gen_two_words()
                 for coref_mention in coref_mentions_1:
                     file_test_modify.write(coref_mention.mention_str)
-                    if word_is_name(coref_mention.mention_head_lemma):
+                    if word_is_name(coref_mention.mention_str):
                         coref_mention.mention_str = new_mention_str_1
                         file_test_modify.write("[" + coref_mention.mention_str + "]; ")
                     else:
@@ -1568,41 +1568,58 @@ def cluster_pairs_to_mention_pairs_2(cluster_pairs):
 
 def word_is_name(word):
     """
-    1.mention_str的首个字符若是字母，则可能是人名转2；若不是字母，则不是人名.
-    2.从字典查询mention_str,若没有，则是人名；若有,则可能是人名，转3.
-    3.从常用英文姓名库查询mention_str,若有,则是人名；若没有，则不是人名.
+    1.mention_str含有数字或"."，则不是人名
+    2.mention_str的首个字符若是字母，则可能是人名转3；若不是字母，则不是人名.
+    3.mention_str含有一个单词：若不在英文词典，则是人名；若在英文词典，则可能是->查常用姓名表，若在则是，不在则不是。
+    4.mention_str一个以上单词：整体在英文词典，则不是；整体不在英文词典，则可能是->取str的前两个单词，如果这两个单词在词典内都搜不到，则是人名；
+      如果这两个单词中的任意一个在词典中搜到了->查询第一个单词是否在first_name表，第二个单词是否在last_name表，有一个在则是人名；反之，不是人名。
 
-    bug：people.com会被认定为人名， Us weekly / Party Girl也会被认定为人名
+    缺陷：Andrew Luck / Andrew 会被认定为人名， Luck不会被认定为人名
     """
     import re
-    with open("../../data/external/human_name/english_dictionary.json", 'r') as f:
-        en_dic = json.load(f)
+    import json
+
     if bool(re.search(r'\d', word)): # 如果字符串含有数字 不是人名
         return False
+    if '.' in word:
+        return False
+
+    with open("data/external/human_name/english_dictionary.json", 'r') as f:
+        en_dic = json.load(f)
+    with open("data/external/human_name/first_names.all.txt", "r") as file_frist_name:
+        first_name_list = file_frist_name.read().splitlines()
+    with open("data/external/human_name/last_names.all.txt", "r") as file_last_name:
+        last_name_list = file_last_name.read().splitlines()
+
     if (word[0] >= "A" and word[0] <= "Z") or (word[0] >= "a" and word[0] <= "z"):
-        if word not in en_dic[word[0]] and word.lower() not in en_dic[word[0].lower()]:
-            return True
-        else:
-            with open("../../data/external/human_name/first_names.all.txt", "r") as file_frist_name:
-                first_name_list = file_frist_name.read().splitlines()
-            with open("../../data/external/human_name/last_names.all.txt", "r") as file_last_name:
-                last_name_list = file_last_name.read().splitlines()
-            word_list = word.split(' ')
-            if len(word_list) == 1:
-                if word_list[0] in first_name_list or word_list[0].lower() in first_name_list:
+        word_list = word.split(' ')
+        if len(word_list) == 1:  # 如果只有字符串只有一个单词，这个单词在词典里搜不到，那么就认定是一个人名
+            if word_list[0] not in en_dic[word_list[0][0]] and word_list[0].lower() not in en_dic[word_list[0][0].lower()]:
+                return True
+            else:  # 如果能找到，那么可能是一个人名。在常用姓/名库内能找到，则是；找不到，则不是。  为什么用小写？因为姓名库里存储的都是小写。
+                if word_list[0].lower() in first_name_list:
                     return True
-                elif word_list[0] in last_name_list or word_list[0].lower() in last_name_list:
+                elif word_list[0].lower() in last_name_list:
                     return True
                 else:
                     return False
+        else:  # 如果字符串有2个单词
+            # 1.这两个词整体能找到，则一定不是人名；整体找不到，则可能是人名,转2。
+            if word in en_dic[word[0]]:
+                return False
             else:
-                if word_list[0] in first_name_list or word_list[0].lower() in first_name_list:
-                    if word_list[1] in last_name_list or word_list[1].lower() in last_name_list:
+                # 2.把整体拆开为两个词。两个词都搜不到，则是人名；两个词中任意一个能搜到，则可能是人名，转3
+                if word_list[0] not in en_dic[word_list[0][0]] \
+                        and word_list[0].lower() not in en_dic[word_list[0][0].lower()] \
+                        and word_list[1] not in en_dic[word_list[1][0]] \
+                        and word_list[1].lower() not in en_dic[word_list[1][0].lower()]:
+                    return True
+                else:
+                    # 3.如果在词典中搜到的这个词，在常用姓名库内 则是人名，反之不是。
+                    if word_list[0].lower() in first_name_list or word_list[1].lower() in last_name_list:
                         return True
                     else:
-                        return False # 名对 姓不对 ？？算人名吗？
-                else:
-                    return False
+                        return False
     else:
         return False # 如果mention_str的开头不是英文字母，它就不是一个英文名
 
